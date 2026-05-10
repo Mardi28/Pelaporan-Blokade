@@ -11,6 +11,11 @@ import re
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # ==========================================
+# KONFIGURASI LOGO
+# ==========================================
+LOGO_PATH = "Logo.png"  # Ganti dengan nama file logo Anda jika berubah
+
+# ==========================================
 # CEK KETERSEDIAAN LIBRARY TAMBAHAN
 # ==========================================
 try:
@@ -231,7 +236,7 @@ def inject_custom_css():
 
         .login-box {
             background-color: #ffffff; padding: 40px; border-radius: 16px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-top: 50px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-top: 20px;
         }
         .sidebar-profile {
             background: linear-gradient(135deg, #0f172a, #1e293b); padding: 20px;
@@ -348,9 +353,15 @@ def login_page():
     
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
+        # Menampilkan Logo dengan ukuran proporsional di form login
+        try:
+            st.image(LOGO_PATH, use_container_width=True)
+        except Exception:
+            pass # Lewati jika file logo belum ada/salah nama
+
         st.markdown("""
         <div class="login-box">
-            <h2 style='text-align: center; font-weight: 800; color: #1e293b !important;'>🚧 PORTAL BLOKADE</h2>
+            <h2 style='text-align: center; font-weight: 800; color: #1e293b !important;'>PORTAL BLOKADE</h2>
             <p style='text-align: center; color: #64748b !important; margin-bottom: 25px;'>Sistem Pelaporan & Analitik Interaktif</p>
         """, unsafe_allow_html=True)
         
@@ -369,14 +380,11 @@ def login_page():
                 else:
                     st.error("❌ Username atau Password salah!")
         
-        st.info("💡 **Kredensial Default:**\n- `admin` / `123` (Full Akses)\n- `spv` / `123` (Input Data)\n- `mgr` / `123` (Dashboard)")
+        # Keterangan kredensial telah dihapus dari sini sesuai permintaan
         st.markdown("</div>", unsafe_allow_html=True)
 
 def input_form_page():
-    # Menambahkan Placeholder Logo Perusahaan di atas header
-    # Ganti URL di bawah ini dengan nama file logo Anda, misal: st.image("Logo.png", width=300)
-    st.image("Logo.png", width=300)
-    
+    # Logo telah dihapus dari sini dan dipindahkan ke st.sidebar di main()
     st.header("📝 Form Input Pelaporan Blokade")
     st.markdown("Silakan isi form di bawah ini dengan lengkap untuk mencatat insiden baru.")
     
@@ -800,6 +808,16 @@ def main():
     if not st.session_state['logged_in']:
         login_page()
     else:
+        # ==========================================================
+        # Menambahkan Logo di Sidebar agar muncul di semua navigasi
+        # ==========================================================
+        try:
+            st.sidebar.image(LOGO_PATH, use_container_width=True)
+        except Exception:
+            pass # Mengabaikan error jika gambar tidak ditemukan
+        
+        st.sidebar.markdown("<hr style='margin-top: 5px; margin-bottom: 15px;'>", unsafe_allow_html=True)
+
         st.sidebar.markdown(f"""
         <div class="sidebar-profile">
             <div style="font-size: 50px; margin-bottom: 5px;">🧑‍💼</div>
