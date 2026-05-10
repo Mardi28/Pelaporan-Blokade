@@ -10,6 +10,9 @@ import requests
 import re
 from werkzeug.security import generate_password_hash, check_password_hash
 
+# ==========================================
+# CEK KETERSEDIAAN LIBRARY TAMBAHAN
+# ==========================================
 try:
     from fpdf import FPDF
     FPDF_AVAILABLE = True
@@ -29,14 +32,19 @@ try:
 except ImportError:
     WORDCLOUD_AVAILABLE = False
 
+# ==========================================
+# KONFIGURASI HALAMAN
+# ==========================================
 st.set_page_config(page_title="Aplikasi Pelaporan Blokade", page_icon="🚧", layout="wide", initial_sidebar_state="expanded")
 
-# Menggunakan nama file baru agar tidak bentrok dengan password plaintext dari DB sebelumnya
+# ==========================================
+# DATABASE LOKAL (SQLITE) SETTING (V3)
+# ==========================================
 conn = sqlite3.connect('blokade_pro_v3.db', check_same_thread=False)
 
 def init_db():
     c = conn.cursor()
-    # Tabel Users dengan password hash
+    # Tabel Users (Menyimpan password yang di-hash)
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (username TEXT PRIMARY KEY, password TEXT, role TEXT, nama_lengkap TEXT)''')
     
@@ -44,23 +52,25 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS audit_logs
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, user TEXT, action TEXT, details TEXT)''')
     
+    # Cek apakah admin sudah ada, jika belum buat dengan password default '123' yang di-hash
     c.execute("SELECT * FROM users WHERE username='admin'")
     if not c.fetchone():
-        hashed_pw = generate_password_hash("123") 
-        c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('admin', hashed_pw, 'Administrator', 'Super Admin'))
-        c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('spv', hashed_pw, 'Supervisor', 'Jhon Doe (SPV)'))
-        c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('mgr', hashed_pw, 'Manager', 'Bapak Manager'))
+        default_pw = generate_password_hash("123")
+        c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('admin', default_pw, 'Administrator', 'Super Admin'))
+        c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('spv', default_pw, 'Supervisor', 'Jhon Doe (SPV)'))
+        c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('mgr', default_pw, 'Manager', 'Bapak Manager'))
         conn.commit()
 
+    # Tabel Laporan Blokade
     try:
         df_cek = pd.read_sql("SELECT * FROM laporan LIMIT 1", conn)
     except:
         DUMMY_DATA = [
-            {"Tanggal": datetime.date(2024, 2, 10), "Pelaku": "Andi", "No HP": "0812345", "Kabupaten": "Bolaang Mongondow", "Kecamatan": "Lolayan", "Desa": "Bakan", "Lokasi": "Simpang 3 Masjid Bakan", "Waktu Mulai": "08:00:00", "Waktu Selesai": "13:00:00", "Durasi (Jam)": 5.0, "Kategori Durasi": "Cepat", "Isu": "Tuntutan Pekerjaan", "Target": "PT JRBM & PT SMA", "Deskripsi": "Masyarakat menuntut pekerjaan untuk warga lokal. Tenda didirikan di simpang 3.", "File_Bukti": ""},
-            {"Tanggal": datetime.date(2024, 5, 20), "Pelaku": "Budi", "No HP": "0812345", "Kabupaten": "Bolaang Mongondow", "Kecamatan": "Lolayan", "Desa": "Matali Baru", "Lokasi": "Lokasi Umum Matali Baru", "Waktu Mulai": "07:00:00", "Waktu Selesai": "18:00:00", "Durasi (Jam)": 11.0, "Kategori Durasi": "Lambat", "Isu": "Kualitas Lingkungan", "Target": "PT JRBM", "Deskripsi": "Kompensasi debu jalan belum dibayarkan. Warga memblokade jalan pakai kayu.", "File_Bukti": ""},
-            {"Tanggal": datetime.date(2024, 8, 15), "Pelaku": "Citra", "No HP": "0812345", "Kabupaten": "Bolaang Mongondow Selatan", "Kecamatan": "Pinolosian Tengah", "Desa": "Tobayagan", "Lokasi": "Port Motandoi", "Waktu Mulai": "09:00:00", "Waktu Selesai": "13:30:00", "Durasi (Jam)": 4.5, "Kategori Durasi": "Cepat", "Isu": "Kompensasi Lahan", "Target": "PT JRBM", "Deskripsi": "Ganti rugi lahan area pelabuhan. Mediasi berhasil dilakukan jam 1 siang.", "File_Bukti": ""},
-            {"Tanggal": datetime.date(2025, 1, 15), "Pelaku": "Eko", "No HP": "0812345", "Kabupaten": "Bolaang Mongondow", "Kecamatan": "Lolayan", "Desa": "Bakan", "Lokasi": "Parkiran Blok C", "Waktu Mulai": "06:00:00", "Waktu Selesai": "10:00:00", "Durasi (Jam)": 4.0, "Kategori Durasi": "Cepat", "Isu": "Tuntutan Pekerjaan", "Target": "PT JRBM & PT SMA", "Deskripsi": "Protes penerimaan karyawan baru. Karyawan lokal merasa diabaikan.", "File_Bukti": ""},
-            {"Tanggal": datetime.date(2025, 6, 20), "Pelaku": "Gita", "No HP": "0812345", "Kabupaten": "Bolaang Mongondow Selatan", "Kecamatan": "Pinolosian Tengah", "Desa": "Tobayagan", "Lokasi": "Simpang 2 Akses Masuk Motandoi", "Waktu Mulai": "08:00:00", "Waktu Selesai": "20:00:00", "Durasi (Jam)": 12.0, "Kategori Durasi": "Lambat", "Isu": "Ganti Rugi Tanaman/Banjir", "Target": "PT JRBM", "Deskripsi": "Tuntutan ganti rugi tanaman cengkeh yang terkena dampak. Negosiasi alot.", "File_Bukti": ""},
+            {"Tanggal": datetime.date(2024, 2, 10), "Pelaku": "Andi", "No HP": "0812345678", "Kabupaten": "Bolaang Mongondow", "Kecamatan": "Lolayan", "Desa": "Bakan", "Lokasi": "Simpang 3 Masjid Bakan", "Waktu Mulai": "08:00", "Waktu Selesai": "13:00", "Durasi (Jam)": 5.0, "Kategori Durasi": "Cepat", "Isu": "Tuntutan Pekerjaan", "Target": "PT JRBM & PT SMA", "Deskripsi": "Masyarakat menuntut pekerjaan untuk warga lokal. Tenda didirikan di simpang 3.", "File_Bukti": ""},
+            {"Tanggal": datetime.date(2024, 5, 20), "Pelaku": "Budi", "No HP": "0812345678", "Kabupaten": "Bolaang Mongondow", "Kecamatan": "Lolayan", "Desa": "Matali Baru", "Lokasi": "Lokasi Umum Matali Baru", "Waktu Mulai": "07:00", "Waktu Selesai": "18:00", "Durasi (Jam)": 11.0, "Kategori Durasi": "Lambat", "Isu": "Kualitas Lingkungan", "Target": "PT JRBM", "Deskripsi": "Kompensasi debu jalan belum dibayarkan. Warga memblokade jalan pakai kayu.", "File_Bukti": ""},
+            {"Tanggal": datetime.date(2024, 8, 15), "Pelaku": "Citra", "No HP": "0812345678", "Kabupaten": "Bolaang Mongondow Selatan", "Kecamatan": "Pinolosian Tengah", "Desa": "Tobayagan", "Lokasi": "Port Motandoi", "Waktu Mulai": "09:00", "Waktu Selesai": "13:30", "Durasi (Jam)": 4.5, "Kategori Durasi": "Cepat", "Isu": "Kompensasi Lahan", "Target": "PT JRBM", "Deskripsi": "Ganti rugi lahan area pelabuhan. Mediasi berhasil dilakukan jam 1 siang.", "File_Bukti": ""},
+            {"Tanggal": datetime.date(2025, 1, 15), "Pelaku": "Eko", "No HP": "0812345678", "Kabupaten": "Bolaang Mongondow", "Kecamatan": "Lolayan", "Desa": "Bakan", "Lokasi": "Parkiran Blok C", "Waktu Mulai": "06:00", "Waktu Selesai": "10:00", "Durasi (Jam)": 4.0, "Kategori Durasi": "Cepat", "Isu": "Tuntutan Pekerjaan", "Target": "PT JRBM & PT SMA", "Deskripsi": "Protes penerimaan karyawan baru. Karyawan lokal merasa diabaikan.", "File_Bukti": ""},
+            {"Tanggal": datetime.date(2025, 6, 20), "Pelaku": "Gita", "No HP": "0812345678", "Kabupaten": "Bolaang Mongondow Selatan", "Kecamatan": "Pinolosian Tengah", "Desa": "Tobayagan", "Lokasi": "Simpang 2 Akses Masuk Motandoi", "Waktu Mulai": "08:00", "Waktu Selesai": "20:00", "Durasi (Jam)": 12.0, "Kategori Durasi": "Lambat", "Isu": "Ganti Rugi Tanaman/Banjir", "Target": "PT JRBM", "Deskripsi": "Tuntutan ganti rugi tanaman cengkeh yang terkena dampak. Negosiasi alot.", "File_Bukti": ""},
         ]
         df_dummy = pd.DataFrame(DUMMY_DATA)
         df_dummy.to_sql('laporan', conn, index=False)
@@ -80,13 +90,13 @@ def add_audit_log(user, action, details):
     conn.commit()
 
 def send_telegram_notif(data_dict, pelapor):
+    # Mengambil rahasia dari st.secrets jika tersedia (untuk cloud), jika tidak gunakan default/dummy
     try:
-        # Mengambil dari st.secrets (Praktik Keamanan Terbaik)
         BOT_TOKEN = st.secrets["BOT_TOKEN"]
         CHAT_ID = st.secrets["CHAT_ID"]
     except Exception:
-        # Fallback jika belum di-setup di lokal/server
-        return False 
+        BOT_TOKEN = "DUMMY_TOKEN"
+        CHAT_ID = "DUMMY_CHAT_ID"
     
     pesan = f"🚨 *LAPORAN BLOKADE BARU* 🚨\n\n"
     pesan += f"📍 *Lokasi:* {data_dict['Desa']}, {data_dict['Kabupaten']}\n"
@@ -95,6 +105,9 @@ def send_telegram_notif(data_dict, pelapor):
     pesan += f"⏱️ *Durasi:* {data_dict['Durasi (Jam)']} Jam ({data_dict['Kategori Durasi']})\n"
     pesan += f"📝 *Deskripsi:* {data_dict['Deskripsi']}\n\n"
     pesan += f"👤 *Dilaporkan oleh:* {pelapor}"
+
+    if BOT_TOKEN == "DUMMY_TOKEN":
+        return False 
 
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -107,20 +120,25 @@ def send_telegram_notif(data_dict, pelapor):
 def authenticate(username, password):
     c = conn.cursor()
     c.execute("SELECT password, role, nama_lengkap FROM users WHERE username=?", (username,))
-    user = c.fetchone()
+    user_record = c.fetchone()
     
-    if user:
-        stored_hash = user[0]
-        if check_password_hash(stored_hash, password):
-            add_audit_log(user[2], "LOGIN", f"User {username} berhasil login.")
-            return (user[1], user[2]) 
+    if user_record:
+        hashed_password = user_record[0]
+        # Memeriksa password menggunakan werkzeug security
+        if check_password_hash(hashed_password, password):
+            add_audit_log(user_record[2], "LOGIN", f"User {username} berhasil login.")
+            return user_record[1], user_record[2] # Return Role dan Nama Lengkap
     return None
 
 init_db()
 
+# Buat folder upload jika belum ada
 if not os.path.exists("uploads"):
     os.makedirs("uploads")
 
+# ==========================================
+# DATA MASTER (DICTIONARY)
+# ==========================================
 LOKASI_DATA = {
     "Bolaang Mongondow": {
         "Lolayan": {
@@ -169,10 +187,16 @@ def get_coordinates(desa, kab):
     if kab == "Bolaang Mongondow": return (0.650, 124.000)
     return (0.350, 123.950)
 
+# ==========================================
+# INISIALISASI STATE (LOGIN)
+# ==========================================
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'role' not in st.session_state: st.session_state['role'] = None
 if 'nama_lengkap' not in st.session_state: st.session_state['nama_lengkap'] = None
 
+# ==========================================
+# CSS CUSTOM TERMASUK @MEDIA PRINT
+# ==========================================
 def inject_custom_css():
     st.markdown("""
         <style>
@@ -187,6 +211,7 @@ def inject_custom_css():
         }
         .metric-card p, .metric-card div, .metric-card span { color: #ffffff !important; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); }
         
+        /* Palet Warna KPI yang dikembalikan */
         .card-bm    { background: linear-gradient(135deg, #3b82f6, #2563eb); } 
         .card-bms   { background: linear-gradient(135deg, #ec4899, #db2777); } 
         .card-sma   { background: linear-gradient(135deg, #f59e0b, #d97706); } 
@@ -242,6 +267,9 @@ def force_black_text_on_plot(fig):
     fig.update_yaxes(showgrid=True, gridcolor="#e2e8f0", title_font=dict(color="#000000"), tickfont=dict(color="#000000"), title_standoff=15)
     return fig
 
+# ==========================================
+# FUNGSI MEMBUAT KARTU KPI
+# ==========================================
 def create_kpi_card(title, value, subtitle, css_class):
     return f"""
     <div class="metric-card {css_class}">
@@ -251,6 +279,9 @@ def create_kpi_card(title, value, subtitle, css_class):
     </div>
     """
 
+# ==========================================
+# FUNGSI EXPORT PDF & EXCEL
+# ==========================================
 def generate_pdf(df):
     pdf = FPDF(orientation='L', unit='mm', format='A3')
     pdf.add_page()
@@ -282,8 +313,12 @@ def generate_excel(df):
         df.to_excel(writer, index=False, sheet_name='Laporan Blokade')
     return output.getvalue()
 
+# ==========================================
+# FUNGSI AUTO-SUMMARY (CERDAS)
+# ==========================================
 def generate_smart_summary(df):
-    if df.empty: return "Tidak ada data pada periode ini untuk dianalisis."
+    if df.empty:
+        return "Tidak ada data pada periode ini untuk dianalisis."
     
     total_kasus = len(df)
     total_jam = df['Durasi (Jam)'].sum()
@@ -302,6 +337,10 @@ def generate_smart_summary(df):
         narasi += f"✅ Mayoritas insiden berhasil ditangani dengan respons cepat (≤ 9 Jam), menunjukkan performa tim mediasi lapangan yang cukup efektif."
         
     return narasi
+
+# ==========================================
+# FUNGSI-FUNGSI UI (HALAMAN-HALAMAN)
+# ==========================================
 
 def login_page():
     inject_custom_css()
@@ -324,8 +363,8 @@ def login_page():
                 user_data = authenticate(username, password)
                 if user_data:
                     st.session_state['logged_in'] = True
-                    st.session_state['role'] = user_data[0]
-                    st.session_state['nama_lengkap'] = user_data[1]
+                    st.session_state['role'] = user_data[0] # Role
+                    st.session_state['nama_lengkap'] = user_data[1] # Nama
                     st.rerun()
                 else:
                     st.error("❌ Username atau Password salah!")
@@ -342,7 +381,7 @@ def input_form_page():
         col1, col2 = st.columns(2)
         with col1:
             nama_pelaku = st.text_input("👤 Nama Pelaku")
-            no_hp = st.text_input("📱 Nomor HP Pelaku", placeholder="Contoh: 08123456789")
+            no_hp = st.text_input("📱 Nomor HP Pelaku", help="Hanya masukkan angka")
         
         with col2:
             kabupaten = st.selectbox("📍 Kabupaten", list(LOKASI_DATA.keys()))
@@ -355,9 +394,12 @@ def input_form_page():
     with st.container():
         st.subheader("⏱️ Waktu Kejadian")
         col3, col4, col5 = st.columns(3)
-        with col3: tanggal = st.date_input("📅 Tanggal Kejadian")
-        with col4: waktu_mulai = st.time_input("⏳ Waktu Mulai")
-        with col5: waktu_selesai = st.time_input("⌛ Waktu Selesai")
+        with col3:
+            tanggal = st.date_input("📅 Tanggal Kejadian")
+        with col4:
+            waktu_mulai = st.time_input("⏳ Waktu Mulai")
+        with col5:
+            waktu_selesai = st.time_input("⌛ Waktu Selesai")
             
         dt_mulai = datetime.datetime.combine(tanggal, waktu_mulai)
         dt_selesai = datetime.datetime.combine(tanggal, waktu_selesai)
@@ -366,6 +408,7 @@ def input_form_page():
         durasi_detik = (dt_selesai - dt_mulai).total_seconds()
         durasi_jam = round(durasi_detik / 3600, 2)
         kategori_durasi = "Cepat" if durasi_jam <= 9 else "Lambat"
+        
         st.info(f"⚙️ **Kalkulasi Durasi Otomatis:** {durasi_jam} Jam (Kategori: **{kategori_durasi}**)")
 
     st.markdown("---")
@@ -373,27 +416,28 @@ def input_form_page():
     with st.container():
         st.subheader("🎯 Tuntutan & Follow Up")
         col6, col7 = st.columns(2)
-        with col6: isu = st.selectbox("📢 Jenis Isu / Tuntutan", list(TUNTUTAN_DATA.keys()))
-        with col7: target_perusahaan = st.text_input("🏢 Target Perusahaan (Otomatis)", value=TUNTUTAN_DATA[isu], disabled=True)
+        with col6:
+            isu = st.selectbox("📢 Jenis Isu / Tuntutan", list(TUNTUTAN_DATA.keys()))
+        with col7:
+            target_perusahaan = st.text_input("🏢 Target Perusahaan (Otomatis)", value=TUNTUTAN_DATA[isu], disabled=True)
         
         deskripsi = st.text_area("✍️ Deskripsi / Follow Up Kejadian", height=100)
+        
         bukti = st.file_uploader("📎 Upload Bukti Foto (Opsional)", type=['jpg', 'png', 'jpeg'])
         
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("💾 Simpan Data Blokade ke Database", type="primary", use_container_width=True):
-            
-            # Validasi Ketat
-            if not nama_pelaku.strip():
-                st.error("❌ Nama Pelaku tidak boleh kosong!")
-            elif no_hp and not re.match(r'^\d+$', no_hp):
-                st.error("❌ Nomor HP hanya boleh berisi angka!")
-            elif len(deskripsi.strip()) < 10:
-                st.error("❌ Deskripsi minimal 10 karakter untuk kelengkapan laporan.")
+            # Validasi form tambahan
+            if nama_pelaku.strip() == "":
+                st.error("❌ Gagal Menyimpan: Nama Pelaku harus diisi!")
+            elif not re.match(r"^[0-9]+$", no_hp) and no_hp != "":
+                st.error("❌ Gagal Menyimpan: Nomor HP hanya boleh berisi angka!")
             else:
                 file_path = ""
                 if bukti:
                     file_path = os.path.join("uploads", bukti.name)
-                    with open(file_path, "wb") as f: f.write(bukti.getbuffer())
+                    with open(file_path, "wb") as f:
+                        f.write(bukti.getbuffer())
 
                 new_data = {
                     "Tanggal": str(tanggal), "Pelaku": nama_pelaku, "No HP": no_hp,
@@ -404,25 +448,31 @@ def input_form_page():
                 }
                 save_new_data(new_data)
                 add_audit_log(st.session_state['nama_lengkap'], "CREATE", f"Menambahkan laporan blokade baru di {desa}.")
+                
                 st.success("✅ Data Blokade Berhasil Disimpan Permanen ke Sistem!")
                 
                 st.toast("Mempersiapkan Notifikasi...", icon="⏳")
                 is_sent = send_telegram_notif(new_data, st.session_state['nama_lengkap'])
-                if is_sent: 
-                    st.info("📲 Notifikasi Telegram berhasil dikirim ke Grup Manajemen!")
-                else: 
-                    st.warning("🔔 Simulasi Notifikasi: Pesan peringatan terkirim (Harap setup `st.secrets` untuk live Telegram).")
+                
+                if is_sent: st.info("📲 Notifikasi Telegram berhasil dikirim ke Grup Manajemen!")
+                else: st.info(f"🔔 **Simulasi Notifikasi:** Pesan peringatan terkirim ke Manajemen bahwa terjadi blokade di {desa}.")
+                
                 st.balloons()
+
 
 def kelola_data_page():
     st.header("⚙️ Kelola Data & Pengaturan")
+    
     tab1, tab2, tab3, tab4 = st.tabs(["📝 Edit & Hapus Laporan", "📥 Import Data Massal", "👥 Manajemen User", "🕵️‍♂️ Log Aktivitas"])
     
     with tab1:
         st.markdown("### Edit atau Hapus Data Laporan (Full CRUD)")
+        st.caption("Ubah data langsung di dalam tabel di bawah ini, lalu klik tombol Simpan Perubahan di bagian bawah tabel.")
         df = load_data()
+        
         if not df.empty:
             edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+            
             if st.button("💾 Simpan Perubahan Tabel Laporan", type="primary"):
                 edited_df.to_sql('laporan', conn, if_exists='replace', index=False)
                 add_audit_log(st.session_state['nama_lengkap'], "UPDATE/DELETE", "Mengubah atau menghapus baris data laporan.")
@@ -433,14 +483,23 @@ def kelola_data_page():
 
     with tab2:
         st.markdown("### 📥 Import Data Historis")
+        st.caption("Unggah file CSV atau Excel yang berisi data laporan. Pastikan nama kolom sesuai standar aplikasi.")
+        
         uploaded_file = st.file_uploader("Pilih file data (.csv atau .xlsx)", type=["csv", "xlsx"])
+        
         if uploaded_file is not None:
             try:
-                df_import = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+                if uploaded_file.name.endswith('.csv'):
+                    df_import = pd.read_csv(uploaded_file)
+                else:
+                    df_import = pd.read_excel(uploaded_file)
+                
+                st.write("Preview Data yang akan diimpor:")
                 st.dataframe(df_import.head())
+                
                 if st.button("🚀 Eksekusi Import Data", type="primary"):
                     df_import.to_sql('laporan', conn, if_exists='append', index=False)
-                    add_audit_log(st.session_state['nama_lengkap'], "IMPORT", f"Mengimpor {len(df_import)} baris dari {uploaded_file.name}.")
+                    add_audit_log(st.session_state['nama_lengkap'], "IMPORT", f"Mengimpor {len(df_import)} baris data dari file {uploaded_file.name}.")
                     st.success(f"✅ Berhasil mengimpor {len(df_import)} baris data!")
             except Exception as e:
                 st.error(f"❌ Terjadi kesalahan saat membaca file: {e}")
@@ -448,22 +507,26 @@ def kelola_data_page():
     with tab3:
         if st.session_state['role'] == 'Administrator':
             st.markdown("### Manajemen Akun Pengguna")
+            st.warning("⚠️ Mengubah password di sini memerlukan input yang sudah di-hash. Fitur ini masih basic, hubungi developer untuk membuat form ganti password khusus.")
             df_users = pd.read_sql("SELECT * FROM users", conn)
-            # Menyembunyikan password di tampilan agar lebih aman
-            df_users_display = df_users.copy()
-            df_users_display['password'] = '********'
-            st.dataframe(df_users_display, use_container_width=True)
-            st.info("💡 Edit user secara langsung melalui database SQLite di server untuk keamanan hash.")
+            
+            edited_users = st.data_editor(df_users, num_rows="dynamic", use_container_width=True)
+            if st.button("💾 Simpan Perubahan Akun", type="primary"):
+                edited_users.to_sql('users', conn, if_exists='replace', index=False)
+                add_audit_log(st.session_state['nama_lengkap'], "USER_MGMT", "Melakukan perubahan pada data akun pengguna.")
+                st.success("Data User berhasil diperbarui!")
         else:
-            st.error("🚫 Akses Ditolak: Harus login sebagai Administrator.")
+            st.error("🚫 Akses Ditolak: Anda harus login sebagai Administrator untuk melihat menu ini.")
             
     with tab4:
         if st.session_state['role'] in ['Administrator', 'Manager']:
             st.markdown("### 🕵️‍♂️ Log Riwayat Aktivitas (Audit Trail)")
+            st.caption("Memantau setiap pergerakan data di dalam sistem untuk transparansi operasional.")
             df_logs = pd.read_sql("SELECT * FROM audit_logs ORDER BY id DESC", conn)
             st.dataframe(df_logs, use_container_width=True, hide_index=True)
         else:
             st.error("🚫 Akses Ditolak: Hanya Manager dan Administrator yang dapat melihat log audit.")
+
 
 def dashboard_page():
     inject_custom_css()
@@ -473,112 +536,205 @@ def dashboard_page():
         st.header("📊 Dashboard Analitik Blokade")
         st.caption("Ringkasan Performa dan Analisa Kendala di Lapangan secara Real-time")
     with col_head2:
-        st.markdown("""<div style="margin-top: 15px;"><button onclick="window.print()" style="background-color: #0f172a; color: white; padding: 12px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">🖨️ Cetak Full Dashboard</button></div>""", unsafe_allow_html=True)
+        st.markdown("""
+            <div style="margin-top: 15px;">
+                <button onclick="window.print()" style="background-color: #0f172a; color: white; padding: 12px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    🖨️ Cetak Full Dashboard
+                </button>
+            </div>
+        """, unsafe_allow_html=True)
     
     df = load_data()
+    
     if df.empty:
         st.warning("⚠️ Belum ada data laporan di Database.")
         return
 
-    df['Datetime_Kejadian'] = pd.to_datetime(df['Tanggal'])
-    df['Tanggal_Date'] = df['Datetime_Kejadian'].dt.date
-    df['Tahun'] = df['Datetime_Kejadian'].dt.year
-    df['Bulan_Tahun'] = df['Datetime_Kejadian'].dt.strftime('%b %Y')
-    df['YearMonth_Sort'] = df['Datetime_Kejadian'].dt.strftime('%Y-%m') # Untuk sorting tren
-    df['Quarter'] = 'Q' + df['Datetime_Kejadian'].dt.quarter.astype(str)
-    
-    # Ekstraksi Hari untuk Heatmap
-    hari_map = {0: 'Senin', 1: 'Selasa', 2: 'Rabu', 3: 'Kamis', 4: 'Jumat', 5: 'Sabtu', 6: 'Minggu'}
-    df['Hari'] = df['Datetime_Kejadian'].dt.dayofweek.map(hari_map)
-    
-    # Ekstraksi Jam untuk Heatmap
-    df['Jam'] = df['Waktu Mulai'].apply(lambda x: str(x).split(':')[0] if pd.notna(x) else '00')
-    df['Jam'] = df['Jam'].str.zfill(2) + ":00"
+    df['Tanggal'] = pd.to_datetime(df['Tanggal']).dt.date
+    df['Tahun'] = pd.to_datetime(df['Tanggal']).dt.year
+    df['Bulan_Tahun'] = pd.to_datetime(df['Tanggal']).dt.strftime('%b %Y')
+    df['Quarter'] = 'Q' + pd.to_datetime(df['Tanggal']).dt.quarter.astype(str)
 
+    # FILTER SECTION
     st.markdown("#### 🔍 Filter Analitik Canggih")
     col_f1, col_f2, col_f3 = st.columns([1, 1, 1.5])
-    with col_f1: selected_year = st.selectbox("📆 Pilih Tahun", ["Semua Tahun"] + list(sorted(df['Tahun'].unique(), reverse=True)))
-    with col_f2: selected_q = st.selectbox("🗂️ Periode Triwulan", ["Semua", "Q1", "Q2", "Q3", "Q4"])
-    with col_f3: date_range = st.date_input("🗓️ Filter Rentang Waktu (Awal - Akhir)", [])
+    with col_f1:
+        selected_year = st.selectbox("📆 Pilih Tahun", ["Semua Tahun"] + list(sorted(df['Tahun'].unique(), reverse=True)))
+    with col_f2:
+        selected_q = st.selectbox("🗂️ Periode Triwulan", ["Semua", "Q1", "Q2", "Q3", "Q4"])
+    with col_f3:
+        date_range = st.date_input("🗓️ Filter Rentang Waktu (Awal - Akhir)", [])
     
     df_raw = df.copy()
+
     if selected_year != "Semua Tahun": df = df[df['Tahun'] == selected_year]
     if selected_q != "Semua": df = df[df['Quarter'] == selected_q]
     if len(date_range) == 2:
         start_date, end_date = date_range
-        df = df[(df['Tanggal_Date'] >= start_date) & (df['Tanggal_Date'] <= end_date)]
+        df = df[(df['Tanggal'] >= start_date) & (df['Tanggal'] <= end_date)]
 
     st.markdown("<hr/>", unsafe_allow_html=True)
-    st.markdown("#### 🤖 Ringkasan Eksekutif Otomatis")
-    st.markdown(f"<div class='summary-box'>{generate_smart_summary(df)}</div>", unsafe_allow_html=True)
 
+    # RINGKASAN CERDAS (SMART SUMMARY)
+    st.markdown("#### 🤖 Ringkasan Eksekutif Otomatis")
+    smart_text = generate_smart_summary(df)
+    st.markdown(f"<div class='summary-box'>{smart_text}</div>", unsafe_allow_html=True)
+
+    # TREN YOY
     if selected_year != "Semua Tahun":
         df_prev = df_raw[df_raw['Tahun'] == (selected_year - 1)]
+        tot_blokade_now = len(df); tot_blokade_prev = len(df_prev); delta_blokade = tot_blokade_now - tot_blokade_prev
+        tot_jam_now = df['Durasi (Jam)'].sum(); tot_jam_prev = df_prev['Durasi (Jam)'].sum(); delta_jam = tot_jam_now - tot_jam_prev
+
         m1, m2, m3 = st.columns(3)
-        m1.metric("🛡️ Total Blokade", f"{len(df)} Kasus", f"{len(df) - len(df_prev)} Kasus vs Tahun Lalu", "inverse")
-        m2.metric("⏳ Total Lost Time", f"{df['Durasi (Jam)'].sum():.1f} Jam", f"{df['Durasi (Jam)'].sum() - df_prev['Durasi (Jam)'].sum():.1f} Jam vs Tahun Lalu", "inverse")
+        m1.metric("🛡️ Total Blokade", f"{tot_blokade_now} Kasus", f"{delta_blokade} Kasus vs Tahun Lalu", "inverse")
+        m2.metric("⏳ Total Lost Time", f"{tot_jam_now:.1f} Jam", f"{delta_jam:.1f} Jam vs Tahun Lalu", "inverse")
         m3.metric("⚡ Rata-rata Durasi", f"{df['Durasi (Jam)'].mean():.1f} Jam" if len(df)>0 else "0 Jam", "Evaluasi Kecepatan", "off")
         st.markdown("<br>", unsafe_allow_html=True)
 
-    if df.empty: return
+    if df.empty:
+        st.info("ℹ️ Tidak ada data untuk periode yang dipilih.")
+        return
 
+    # ==========================================
+    # KARTU KPI YANG DIKEMBALIKAN FULL (10 KARTU)
+    # ==========================================
     st.markdown("#### 🎯 Key Performance Indicators")
+    tot_bm = len(df[df['Kabupaten'] == "Bolaang Mongondow"]); tot_bms = len(df[df['Kabupaten'] == "Bolaang Mongondow Selatan"])
+    tot_sma = len(df[df['Target'].str.contains('PT SMA', na=False)]); tot_jrbm = len(df[df['Target'].str.contains('PT JRBM', na=False)])
+    tot_lost_time = df['Durasi (Jam)'].sum(); tot_semua = len(df)
+    tot_cepat = len(df[df['Kategori Durasi'] == "Cepat"]); tot_lambat = len(df[df['Kategori Durasi'] == "Lambat"])
+    avg_bm = df[df['Kabupaten'] == "Bolaang Mongondow"]['Durasi (Jam)'].mean(); avg_bms = df[df['Kabupaten'] == "Bolaang Mongondow Selatan"]['Durasi (Jam)'].mean()
+
+    # Baris 1
     c1, c2, c3, c4 = st.columns(4)
-    with c1: st.markdown(create_kpi_card("Total Blokade BM", len(df[df['Kabupaten'] == "Bolaang Mongondow"]), "Kejadian Area BM", "card-bm"), unsafe_allow_html=True)
-    with c2: st.markdown(create_kpi_card("Total Blokade BMS", len(df[df['Kabupaten'] == "Bolaang Mongondow Selatan"]), "Kejadian Area BMS", "card-bms"), unsafe_allow_html=True)
-    with c3: st.markdown(create_kpi_card("Blokade PT SMA", len(df[df['Target'].str.contains('PT SMA', na=False)]), "Melibatkan PT SMA", "card-sma"), unsafe_allow_html=True)
-    with c4: st.markdown(create_kpi_card("Blokade PT JRBM", len(df[df['Target'].str.contains('PT JRBM', na=False)]), "Melibatkan PT JRBM", "card-jrbm"), unsafe_allow_html=True)
+    with c1: st.markdown(create_kpi_card("Total Blokade BM", tot_bm, "Kejadian Area BM", "card-bm"), unsafe_allow_html=True)
+    with c2: st.markdown(create_kpi_card("Total Blokade BMS", tot_bms, "Kejadian Area BMS", "card-bms"), unsafe_allow_html=True)
+    with c3: st.markdown(create_kpi_card("Blokade PT SMA", tot_sma, "Melibatkan PT SMA", "card-sma"), unsafe_allow_html=True)
+    with c4: st.markdown(create_kpi_card("Blokade PT JRBM", tot_jrbm, "Melibatkan PT JRBM", "card-jrbm"), unsafe_allow_html=True)
+
+    # Baris 2
+    c5, c6, c7, c8 = st.columns(4)
+    with c5: st.markdown(create_kpi_card("Total Lost Time", f"{tot_lost_time:.1f} Jam", "Waktu Terbuang", "card-lost"), unsafe_allow_html=True)
+    with c6: st.markdown(create_kpi_card("Total Semua Blokade", tot_semua, "Keseluruhan Area", "card-total"), unsafe_allow_html=True)
+    with c7: st.markdown(create_kpi_card("Penanganan Cepat", tot_cepat, "≤ 9 Jam", "card-cepat"), unsafe_allow_html=True)
+    with c8: st.markdown(create_kpi_card("Penanganan Lambat", tot_lambat, "> 9 Jam", "card-lambat"), unsafe_allow_html=True)
+
+    # Baris 3
+    c9, c10, c11, c12 = st.columns(4)
+    with c9: st.markdown(create_kpi_card("Rata-rata Durasi BM", f"{avg_bm:.1f} Jam" if pd.notna(avg_bm) else "0 Jam", "Rata-rata Waktu", "card-avg-bm"), unsafe_allow_html=True)
+    with c10: st.markdown(create_kpi_card("Rata-rata Durasi BMS", f"{avg_bms:.1f} Jam" if pd.notna(avg_bms) else "0 Jam", "Rata-rata Waktu", "card-avg-bms"), unsafe_allow_html=True)
 
     st.markdown("---")
     
+    # PETA INTERAKTIF
     st.markdown("#### 🗺️ Pemetaan Geospasial Titik Blokade")
     df_map = df.groupby(['Kabupaten', 'Desa']).size().reset_index(name='Jumlah Kasus')
     df_map['lat'] = df_map.apply(lambda r: get_coordinates(r['Desa'], r['Kabupaten'])[0], axis=1)
     df_map['lon'] = df_map.apply(lambda r: get_coordinates(r['Desa'], r['Kabupaten'])[1], axis=1)
-    fig_map = px.scatter_mapbox(df_map, lat="lat", lon="lon", size="Jumlah Kasus", color="Kabupaten", hover_name="Desa", zoom=8, mapbox_style="carto-positron", color_discrete_map={"Bolaang Mongondow": "#3b82f6", "Bolaang Mongondow Selatan": "#ef4444"})
-    fig_map.update_layout(margin={"r":0,"t":10,"l":0,"b":0}, paper_bgcolor="#ffffff")
+    
+    fig_map = px.scatter_mapbox(
+        df_map, lat="lat", lon="lon", size="Jumlah Kasus", color="Kabupaten", 
+        hover_name="Desa", hover_data=["Jumlah Kasus"],
+        color_discrete_map={"Bolaang Mongondow": "#3b82f6", "Bolaang Mongondow Selatan": "#ef4444"},
+        zoom=8, mapbox_style="carto-positron", title="Titik Persebaran Blokade"
+    )
+    fig_map.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, paper_bgcolor="#ffffff")
     st.plotly_chart(fig_map, use_container_width=True)
+
     st.markdown("---")
 
+    # ==========================================
+    # GRAFIK ANALITIK ADVANCED (HEATMAP & TREND ISU)
+    # ==========================================
     st.markdown("#### 🔥 Analisis Waktu Rawan & Tren Isu (Advanced)")
-    col_adv1, col_adv2 = st.columns(2)
     
+    col_adv1, col_adv2 = st.columns(2)
     with col_adv1:
-        # Fitur Baru 1: Heatmap Waktu
-        heatmap_data = df.groupby(['Hari', 'Jam']).size().reset_index(name='Jumlah')
-        fig_heat = px.density_heatmap(
-            heatmap_data, x="Jam", y="Hari", z="Jumlah",
-            category_orders={
-                "Hari": ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"],
-                "Jam": [f"{str(i).zfill(2)}:00" for i in range(24)]
-            },
-            title="Heatmap Jam & Hari Kejadian Rawan",
-            color_continuous_scale="Reds"
-        )
-        st.plotly_chart(force_black_text_on_plot(fig_heat), use_container_width=True, theme=None)
+        # Pre-processing untuk Heatmap
+        df['Hari'] = pd.to_datetime(df['Tanggal']).dt.day_name()
+        hari_map = {'Monday': 'Senin', 'Tuesday': 'Selasa', 'Wednesday': 'Rabu', 'Thursday': 'Kamis', 'Friday': 'Jumat', 'Saturday': 'Sabtu', 'Sunday': 'Minggu'}
+        df['Hari'] = df['Hari'].map(hari_map)
+        # Menarik jam dari Waktu Mulai (misal '08:00' jadi 8)
+        df['Jam'] = pd.to_datetime(df['Waktu Mulai'], format='%H:%M:%S', errors='coerce').dt.hour
         
-    with col_adv2:
-        # Fitur Baru 2: Time-Series Tren Isu
-        df_trend_isu = df.groupby(['YearMonth_Sort', 'Bulan_Tahun', 'Isu']).size().reset_index(name='Jumlah').sort_values('YearMonth_Sort')
-        fig_trend = px.bar(df_trend_isu, x="Bulan_Tahun", y="Jumlah", color="Isu", title="Tren Pergerakan Isu per Bulan", barmode="stack", color_discrete_sequence=px.colors.qualitative.Set2)
-        st.plotly_chart(force_black_text_on_plot(fig_trend), use_container_width=True, theme=None)
+        if not df['Jam'].isna().all():
+            heatmap_data = df.groupby(['Hari', 'Jam']).size().reset_index(name='Jumlah')
+            # Custom sorting hari
+            cats = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu']
+            heatmap_data['Hari'] = pd.Categorical(heatmap_data['Hari'], categories=cats, ordered=True)
+            heatmap_data = heatmap_data.sort_values('Hari')
+            
+            fig_heat = px.density_heatmap(heatmap_data, x="Jam", y="Hari", z="Jumlah", 
+                                        color_continuous_scale="Reds", title="Heatmap Waktu Kejadian Rawan",
+                                        labels={'Jam': 'Jam Kejadian (0-23)', 'Hari': 'Hari Kejadian'})
+            st.plotly_chart(force_black_text_on_plot(fig_heat), use_container_width=True, theme=None)
+        else:
+            st.info("Format waktu tidak valid untuk membuat heatmap.")
 
-    st.markdown("#### 📊 Distribusi Kasus")
+    with col_adv2:
+        if not df.empty:
+            df_trend_isu = df.groupby(['Bulan_Tahun', 'Isu']).size().reset_index(name='Jumlah')
+            # Konversi agar sorting di grafik sesuai urutan waktu beneran (tidak urut abjad)
+            df_trend_isu['SortDate'] = pd.to_datetime(df_trend_isu['Bulan_Tahun'], format='%b %Y')
+            df_trend_isu = df_trend_isu.sort_values('SortDate')
+            
+            fig_trend_isu = px.bar(df_trend_isu, x="Bulan_Tahun", y="Jumlah", color="Isu",
+                                 title="Tren Pergerakan Isu per Bulan", text_auto=True)
+            st.plotly_chart(force_black_text_on_plot(fig_trend_isu), use_container_width=True, theme=None)
+
+
+    # GRAFIK ANALITIK DASAR
+    st.markdown("#### 📊 Analitik Grafik Lanjutan")
+    
     col_chart1, col_chart2 = st.columns(2)
     with col_chart1:
-        isu_count = df['Isu'].value_counts().reset_index()
+        isu_count = df['Isu'].value_counts().reset_index().head(3)
         isu_count.columns = ['Jenis Isu', 'Jumlah']
-        fig_isu = px.bar(isu_count.head(3), x='Jenis Isu', y='Jumlah', title="Top 3 Jenis Isu Utama", text_auto=True, color='Jenis Isu', color_discrete_sequence=px.colors.qualitative.Pastel)
+        fig_isu = px.bar(isu_count, x='Jenis Isu', y='Jumlah', title="Top 3 Jenis Isu Utama", text_auto=True, color='Jenis Isu', color_discrete_sequence=px.colors.qualitative.Set2)
         st.plotly_chart(force_black_text_on_plot(fig_isu), use_container_width=True, theme=None)
 
     with col_chart2:
         target_count = df['Target'].value_counts().reset_index()
         target_count.columns = ['Target Perusahaan', 'Jumlah']
-        fig_target = px.pie(target_count, values='Jumlah', names='Target Perusahaan', title="Analisis Target Perusahaan", hole=0.45)
+        fig_target = px.pie(target_count, values='Jumlah', names='Target Perusahaan', title="Analisis Target Perusahaan", hole=0.45, color_discrete_sequence=px.colors.qualitative.Pastel)
         st.plotly_chart(force_black_text_on_plot(fig_target), use_container_width=True, theme=None)
 
+    col_chart3, col_chart4 = st.columns(2)
+    with col_chart3:
+        df_bm = df[df['Kabupaten'] == "Bolaang Mongondow"]
+        if not df_bm.empty:
+            bm_desa = df_bm['Desa'].value_counts().reset_index()
+            bm_desa.columns = ['Desa', 'Jumlah']
+            fig_bm_desa = px.bar(bm_desa, x='Desa', y='Jumlah', title="Blokade By BM (Berdasarkan Desa)", text_auto=True, color_discrete_sequence=['#3b82f6'])
+            st.plotly_chart(force_black_text_on_plot(fig_bm_desa), use_container_width=True, theme=None)
+
+    with col_chart4:
+        if not df_bm.empty:
+            bm_isu = df_bm['Isu'].value_counts().reset_index()
+            bm_isu.columns = ['Isu', 'Jumlah']
+            fig_bm_isu = px.bar(bm_isu, x='Isu', y='Jumlah', title="Blokade By BM (Berdasarkan Jenis Isu)", text_auto=True, color_discrete_sequence=['#3b82f6'])
+            st.plotly_chart(force_black_text_on_plot(fig_bm_isu), use_container_width=True, theme=None)
+
+    st.markdown("#### 🏢 Keterlibatan Perusahaan & Tren Waktu")
+    col_chart5, col_chart6 = st.columns(2)
+
+    with col_chart5:
+        df_keterlibatan = pd.DataFrame({'Kategori Perusahaan': ['Keterlibatan PT JRBM', 'Keterlibatan PT SMA'], 'Jumlah Insiden': [tot_jrbm, tot_sma]})
+        fig_keterlibatan = px.bar(df_keterlibatan, x='Kategori Perusahaan', y='Jumlah Insiden', title="Total Keterlibatan Perusahaan", text_auto=True, color='Kategori Perusahaan', color_discrete_map={'Keterlibatan PT JRBM': '#10b981', 'Keterlibatan PT SMA': '#f59e0b'})
+        st.plotly_chart(force_black_text_on_plot(fig_keterlibatan), use_container_width=True, theme=None)
+
+    with col_chart6:
+        if not df.empty:
+            df_time = df.sort_values('Tanggal').groupby('Tanggal')['Durasi (Jam)'].sum().reset_index()
+            fig_time = px.line(df_time, x='Tanggal', y='Durasi (Jam)', markers=True, title="Pergerakan Total Lost Time (Jam)")
+            fig_time.update_traces(line_color='#ef4444', marker=dict(size=8, color='#dc2828'))
+            st.plotly_chart(force_black_text_on_plot(fig_time), use_container_width=True, theme=None)
+
+    # WORD CLOUD (ANALISIS TEKS LOKASI & DESKRIPSI)
     if WORDCLOUD_AVAILABLE:
         st.markdown("#### ☁️ Analisis Teks (Word Cloud)")
+        st.caption("Visualisasi kata-kata kunci yang sering muncul di lapangan berdasarkan input Deskripsi.")
         text_data = " ".join(df['Deskripsi'].dropna().astype(str))
         if text_data.strip():
             wordcloud = WordCloud(width=800, height=300, background_color='white', colormap='viridis', max_words=100).generate(text_data)
@@ -586,19 +742,37 @@ def dashboard_page():
             ax_wc.imshow(wordcloud, interpolation='bilinear')
             ax_wc.axis("off")
             st.pyplot(fig_wc)
+        else:
+            st.info("Belum ada data deskripsi yang cukup untuk Word Cloud.")
 
+    # TABEL DETAIL & EXPORT MULTIFORMAT
     st.markdown("---")
     st.markdown("### 🗃️ Data Detail Blokade & Galeri")
-    display_df = df.drop(columns=['Tahun', 'Bulan_Tahun', 'Quarter', 'Datetime_Kejadian', 'Tanggal_Date', 'YearMonth_Sort', 'Hari', 'Jam'], errors='ignore')
+    
+    # Drop kolom bantuan perhitungan agar tabel tetap bersih
+    display_df = df.drop(columns=['Tahun', 'Bulan_Tahun', 'Quarter', 'Hari', 'Jam', 'SortDate'], errors='ignore')
+    if not display_df.empty: display_df['Tanggal'] = pd.to_datetime(display_df['Tanggal']).dt.strftime('%d-%m-%Y')
     
     col_d1, col_d2, col_d3 = st.columns([1, 1, 4])
     with col_d1:
-        if FPDF_AVAILABLE: st.download_button("📄 Export PDF", data=generate_pdf(df), file_name="Laporan_Blokade.pdf", mime="application/pdf", type="primary")
+        if FPDF_AVAILABLE:
+            st.download_button("📄 Export PDF", data=generate_pdf(df), file_name="Laporan_Blokade.pdf", mime="application/pdf", type="primary")
     with col_d2:
-        if EXCEL_AVAILABLE: st.download_button("📥 Export Excel", data=generate_excel(display_df), file_name="Laporan_Blokade.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
+        if EXCEL_AVAILABLE:
+            st.download_button("📥 Export Excel", data=generate_excel(display_df), file_name="Laporan_Blokade.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
     
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.dataframe(
+        display_df, 
+        use_container_width=True, 
+        hide_index=True,
+        column_config={
+            "File_Bukti": st.column_config.TextColumn("File Bukti", help="Nama File Bukti yang tersimpan di server lokal", width="medium")
+        }
+    )
 
+# ==========================================
+# NAVIGASI UTAMA
+# ==========================================
 def main():
     inject_custom_css()
     
@@ -619,7 +793,7 @@ def main():
             menu = ["📝 Input Data Blokade", "⚙️ Kelola Data (Admin)", "📊 Dashboard Analitik"]
         elif st.session_state['role'] == "Supervisor": 
             menu = ["📝 Input Data Blokade", "⚙️ Kelola Data (Admin)"]
-        else: 
+        else: # Manager
             menu = ["📊 Dashboard Analitik", "⚙️ Kelola Data (Admin)"]
 
         choice = st.sidebar.radio("Pilih Menu:", menu, label_visibility="collapsed")
@@ -627,7 +801,9 @@ def main():
         st.sidebar.markdown("---")
         if st.sidebar.button("🚪 Logout / Keluar", use_container_width=True):
             add_audit_log(st.session_state['nama_lengkap'], "LOGOUT", "User telah keluar dari sistem.")
-            for key in ['logged_in', 'role', 'nama_lengkap']: st.session_state[key] = None
+            st.session_state['logged_in'] = False
+            st.session_state['role'] = None
+            st.session_state['nama_lengkap'] = None
             st.rerun()
 
         if choice == "📝 Input Data Blokade": input_form_page()
