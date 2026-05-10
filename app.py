@@ -606,24 +606,25 @@ def dashboard_page():
     tot_cepat = len(df[df['Kategori Durasi'] == "Cepat"]); tot_lambat = len(df[df['Kategori Durasi'] == "Lambat"])
     avg_bm = df[df['Kabupaten'] == "Bolaang Mongondow"]['Durasi (Jam)'].mean(); avg_bms = df[df['Kabupaten'] == "Bolaang Mongondow Selatan"]['Durasi (Jam)'].mean()
 
-    # Baris 1
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: st.markdown(create_kpi_card("Total Blokade BM", tot_bm, "Kejadian Area BM", "card-bm"), unsafe_allow_html=True)
-    with c2: st.markdown(create_kpi_card("Total Blokade BMS", tot_bms, "Kejadian Area BMS", "card-bms"), unsafe_allow_html=True)
-    with c3: st.markdown(create_kpi_card("Blokade PT SMA", tot_sma, "Melibatkan PT SMA", "card-sma"), unsafe_allow_html=True)
-    with c4: st.markdown(create_kpi_card("Blokade PT JRBM", tot_jrbm, "Melibatkan PT JRBM", "card-jrbm"), unsafe_allow_html=True)
+    with st.container():
+        # Baris 1
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: st.markdown(create_kpi_card("Total Blokade BM", tot_bm, "Kejadian Area BM", "card-bm"), unsafe_allow_html=True)
+        with c2: st.markdown(create_kpi_card("Total Blokade BMS", tot_bms, "Kejadian Area BMS", "card-bms"), unsafe_allow_html=True)
+        with c3: st.markdown(create_kpi_card("Blokade PT SMA", tot_sma, "Melibatkan PT SMA", "card-sma"), unsafe_allow_html=True)
+        with c4: st.markdown(create_kpi_card("Blokade PT JRBM", tot_jrbm, "Melibatkan PT JRBM", "card-jrbm"), unsafe_allow_html=True)
 
-    # Baris 2
-    c5, c6, c7, c8 = st.columns(4)
-    with c5: st.markdown(create_kpi_card("Total Lost Time", f"{tot_lost_time:.1f} Jam", "Waktu Terbuang", "card-lost"), unsafe_allow_html=True)
-    with c6: st.markdown(create_kpi_card("Total Semua Blokade", tot_semua, "Keseluruhan Area", "card-total"), unsafe_allow_html=True)
-    with c7: st.markdown(create_kpi_card("Penanganan Cepat", tot_cepat, "≤ 9 Jam", "card-cepat"), unsafe_allow_html=True)
-    with c8: st.markdown(create_kpi_card("Penanganan Lambat", tot_lambat, "> 9 Jam", "card-lambat"), unsafe_allow_html=True)
+        # Baris 2
+        c5, c6, c7, c8 = st.columns(4)
+        with c5: st.markdown(create_kpi_card("Total Lost Time", f"{tot_lost_time:.1f} Jam", "Waktu Terbuang", "card-lost"), unsafe_allow_html=True)
+        with c6: st.markdown(create_kpi_card("Total Semua Blokade", tot_semua, "Keseluruhan Area", "card-total"), unsafe_allow_html=True)
+        with c7: st.markdown(create_kpi_card("Penanganan Cepat", tot_cepat, "≤ 9 Jam", "card-cepat"), unsafe_allow_html=True)
+        with c8: st.markdown(create_kpi_card("Penanganan Lambat", tot_lambat, "> 9 Jam", "card-lambat"), unsafe_allow_html=True)
 
-    # Baris 3
-    c9, c10, c11, c12 = st.columns(4)
-    with c9: st.markdown(create_kpi_card("Rata-rata Durasi BM", f"{avg_bm:.1f} Jam" if pd.notna(avg_bm) else "0 Jam", "Rata-rata Waktu", "card-avg-bm"), unsafe_allow_html=True)
-    with c10: st.markdown(create_kpi_card("Rata-rata Durasi BMS", f"{avg_bms:.1f} Jam" if pd.notna(avg_bms) else "0 Jam", "Rata-rata Waktu", "card-avg-bms"), unsafe_allow_html=True)
+        # Baris 3
+        c9, c10, c11, c12 = st.columns(4)
+        with c9: st.markdown(create_kpi_card("Rata-rata Durasi BM", f"{avg_bm:.1f} Jam" if pd.notna(avg_bm) else "0 Jam", "Rata-rata Waktu", "card-avg-bm"), unsafe_allow_html=True)
+        with c10: st.markdown(create_kpi_card("Rata-rata Durasi BMS", f"{avg_bms:.1f} Jam" if pd.notna(avg_bms) else "0 Jam", "Rata-rata Waktu", "card-avg-bms"), unsafe_allow_html=True)
 
     st.markdown("---")
     
@@ -715,6 +716,22 @@ def dashboard_page():
             bm_isu.columns = ['Isu', 'Jumlah']
             fig_bm_isu = px.bar(bm_isu, x='Isu', y='Jumlah', title="Blokade By BM (Berdasarkan Jenis Isu)", text_auto=True, color_discrete_sequence=['#3b82f6'])
             st.plotly_chart(force_black_text_on_plot(fig_bm_isu), use_container_width=True, theme=None)
+
+    col_chart_bms1, col_chart_bms2 = st.columns(2)
+    with col_chart_bms1:
+        df_bms = df[df['Kabupaten'] == "Bolaang Mongondow Selatan"]
+        if not df_bms.empty:
+            bms_desa = df_bms['Desa'].value_counts().reset_index()
+            bms_desa.columns = ['Desa', 'Jumlah']
+            fig_bms_desa = px.bar(bms_desa, x='Desa', y='Jumlah', title="Blokade By BMS (Berdasarkan Desa)", text_auto=True, color_discrete_sequence=['#ef4444'])
+            st.plotly_chart(force_black_text_on_plot(fig_bms_desa), use_container_width=True, theme=None)
+
+    with col_chart_bms2:
+        if not df_bms.empty:
+            bms_isu = df_bms['Isu'].value_counts().reset_index()
+            bms_isu.columns = ['Isu', 'Jumlah']
+            fig_bms_isu = px.bar(bms_isu, x='Isu', y='Jumlah', title="Blokade By BMS (Berdasarkan Jenis Isu)", text_auto=True, color_discrete_sequence=['#ef4444'])
+            st.plotly_chart(force_black_text_on_plot(fig_bms_isu), use_container_width=True, theme=None)
 
     st.markdown("#### 🏢 Keterlibatan Perusahaan & Tren Waktu")
     col_chart5, col_chart6 = st.columns(2)
