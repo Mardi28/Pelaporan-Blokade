@@ -373,6 +373,10 @@ def login_page():
         st.markdown("</div>", unsafe_allow_html=True)
 
 def input_form_page():
+    # Menambahkan Placeholder Logo Perusahaan di atas header
+    # Ganti URL di bawah ini dengan nama file logo Anda, misal: st.image("Logo.png", width=300)
+    st.image("https://dummyimage.com/800x150/e2e8f0/475569.png&text=Logo+Perusahaan+Anda", use_container_width=True)
+    
     st.header("📝 Form Input Pelaporan Blokade")
     st.markdown("Silakan isi form di bawah ini dengan lengkap untuk mencatat insiden baru.")
     
