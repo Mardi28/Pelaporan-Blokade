@@ -1,0 +1,9 @@
+streamlit
+pandas
+plotly
+requests
+Werkzeug
+fpdf
+openpyxl
+wordcloud
+matplotlib
