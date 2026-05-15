@@ -124,17 +124,42 @@ def init_db():
         add_audit_log("System", "INIT", "Sistem menginisialisasi database laporan pertama kali.")
 
 def load_data():
-    return pd.read_sql("SELECT * FROM laporan", conn)
+    """Ambil semua data laporan. Return DataFrame kosong jika tabel belum ada."""
+    try:
+        return pd.read_sql("SELECT * FROM laporan", conn)
+    except Exception:
+        return pd.DataFrame()
 
 def save_new_data(new_dict):
-    new_df = pd.DataFrame([new_dict])
-    new_df.to_sql('laporan', conn, if_exists='append', index=False)
+    """Simpan satu baris data laporan baru ke database."""
+    try:
+        new_df = pd.DataFrame([new_dict])
+        new_df.to_sql('laporan', conn, if_exists='append', index=False)
+    except Exception as e:
+        st.error(f"❌ Gagal menyimpan data: {e}")
 
 def add_audit_log(user, action, details):
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    c = conn.cursor()
-    c.execute("INSERT INTO audit_logs (timestamp, user, action, details) VALUES (?, ?, ?, ?)", (now, user, action, details))
-    conn.commit()
+    """
+    Mencatat aktivitas ke tabel audit_logs.
+    Dibungkus try-except + auto-recreate tabel untuk menangani kondisi di
+    Streamlit Cloud di mana koneksi/tabel bisa hilang saat app wake-up dari sleep.
+    """
+    try:
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        c = conn.cursor()
+        # Pastikan tabel ada sebelum INSERT (jaga-jaga jika koneksi di-reset cloud)
+        c.execute('''CREATE TABLE IF NOT EXISTS audit_logs
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT,
+                      user TEXT, action TEXT, details TEXT)''')
+        c.execute(
+            "INSERT INTO audit_logs (timestamp, user, action, details) VALUES (?, ?, ?, ?)",
+            (now, user, action, details)
+        )
+        conn.commit()
+    except Exception as e:
+        # Jangan crash aplikasi hanya karena audit log gagal
+        # Cukup cetak ke console untuk debugging
+        print(f"[AUDIT LOG ERROR] {e} | action={action} | user={user}")
 
 def send_telegram_notif(data_dict, pelapor):
     # Mengambil rahasia dari st.secrets jika tersedia (untuk cloud), jika tidak gunakan default/dummy
