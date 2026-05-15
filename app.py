@@ -86,7 +86,7 @@ def init_db():
     if not c.fetchone():
         default_pw = generate_password_hash("123")
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('admin', default_pw, 'Administrator', 'Super Admin'))
-        c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('officer', default_pw, 'Supervisor', 'Yuda Podomi (Officer)'))
+        c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('spv', default_pw, 'Supervisor', 'Yuda Podomi (Officer)'))
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('mgr', default_pw, 'Manager', 'Bapak Manager'))
         conn.commit()
 
