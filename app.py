@@ -655,89 +655,226 @@ def kelola_data_page():
     with tab3:
         if st.session_state['role'] == 'Administrator':
             st.markdown("### 👥 Manajemen Akun Pengguna")
+            st.caption("Kelola semua akun pengguna: tambah, edit profil, ganti password, dan hapus akun.")
 
-            # ------------------------------------------------------------------
-            # PERBAIKAN STEP 2: Memisahkan fitur manajemen user menjadi dua
-            # bagian yang aman:
-            # 1. Tabel read-only untuk melihat daftar user (tanpa kolom password)
-            # 2. Form khusus untuk ganti password dengan hash otomatis
-            # Sebelumnya, user bisa langsung mengedit kolom password di tabel
-            # yang bisa menyebabkan password tersimpan sebagai plaintext (tidak
-            # ter-hash), sehingga login akan selalu gagal.
-            # ------------------------------------------------------------------
-
-            # --- Bagian 1: Tampilan daftar user (tanpa kolom password) ---
-            st.markdown("#### 📋 Daftar Akun Terdaftar")
-            st.caption("Kolom password disembunyikan untuk keamanan. Gunakan form di bawah untuk mengubah password.")
+            # Ambil data user terbaru (selalu di-refresh setiap render)
             df_users = pd.read_sql("SELECT username, role, nama_lengkap FROM users", conn)
-            st.dataframe(df_users, use_container_width=True, hide_index=True)
+            daftar_username = df_users['username'].tolist()
+
+            # ================================================================
+            # BAGIAN 1 — TABEL DAFTAR USER (read-only, tanpa kolom password)
+            # ================================================================
+            st.markdown("#### 📋 Daftar Akun Terdaftar")
+            st.caption("Kolom password disembunyikan untuk keamanan.")
+
+            # Tampilkan tabel dengan nomor urut
+            df_display = df_users.copy().reset_index(drop=True)
+            df_display.index += 1
+            st.dataframe(
+                df_display,
+                use_container_width=True,
+                column_config={
+                    "username"    : st.column_config.TextColumn("Username"),
+                    "role"        : st.column_config.TextColumn("Role / Jabatan"),
+                    "nama_lengkap": st.column_config.TextColumn("Nama Lengkap"),
+                }
+            )
 
             st.markdown("---")
 
-            # --- Bagian 2: Form tambah user baru ---
-            st.markdown("#### ➕ Tambah Akun Baru")
-            with st.form("form_tambah_user", clear_on_submit=True):
-                col_u1, col_u2 = st.columns(2)
-                with col_u1:
-                    new_username   = st.text_input("👤 Username Baru")
-                    new_nama       = st.text_input("📛 Nama Lengkap")
-                with col_u2:
-                    new_role       = st.selectbox("🎭 Role", ["Administrator", "Supervisor", "Manager"])
-                    new_pw         = st.text_input("🔑 Password Baru", type="password")
-                    new_pw_confirm = st.text_input("🔑 Konfirmasi Password", type="password")
+            # ================================================================
+            # SUB-TAB: Tambah | Edit Profil | Ganti Password | Hapus
+            # ================================================================
+            aksi = st.radio(
+                "🔧 Pilih Aksi:",
+                ["➕ Tambah Akun Baru", "✏️ Edit Profil User", "🔑 Ganti Password", "🗑️ Hapus Akun"],
+                horizontal=True,
+                label_visibility="collapsed"
+            )
 
-                submit_tambah = st.form_submit_button("➕ Tambah User", use_container_width=True)
-                if submit_tambah:
-                    if not new_username.strip() or not new_pw.strip():
-                        st.error("❌ Username dan Password tidak boleh kosong!")
-                    elif new_pw != new_pw_confirm:
-                        st.error("❌ Konfirmasi password tidak cocok!")
-                    else:
-                        c = conn.cursor()
-                        c.execute("SELECT username FROM users WHERE username=?", (new_username,))
-                        if c.fetchone():
-                            st.error(f"❌ Username '{new_username}' sudah ada!")
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ----------------------------------------------------------------
+            # AKSI 1 — TAMBAH AKUN BARU
+            # ----------------------------------------------------------------
+            if aksi == "➕ Tambah Akun Baru":
+                st.markdown("#### ➕ Tambah Akun Baru")
+                with st.form("form_tambah_user", clear_on_submit=True):
+                    col_u1, col_u2 = st.columns(2)
+                    with col_u1:
+                        new_username   = st.text_input("👤 Username", placeholder="contoh: john_doe")
+                        new_nama       = st.text_input("📛 Nama Lengkap", placeholder="contoh: John Doe")
+                    with col_u2:
+                        new_role       = st.selectbox("🎭 Role", ["Administrator", "Supervisor", "Manager"])
+                        new_pw         = st.text_input("🔑 Password", type="password")
+                        new_pw_confirm = st.text_input("🔑 Konfirmasi Password", type="password")
+
+                    submit_tambah = st.form_submit_button("➕ Tambah User", type="primary", use_container_width=True)
+                    if submit_tambah:
+                        if not new_username.strip() or not new_pw.strip():
+                            st.error("❌ Username dan Password tidak boleh kosong!")
+                        elif new_pw != new_pw_confirm:
+                            st.error("❌ Konfirmasi password tidak cocok!")
+                        elif len(new_pw) < 6:
+                            st.error("❌ Password minimal 6 karakter!")
                         else:
-                            hashed = generate_password_hash(new_pw)
-                            c.execute("INSERT INTO users VALUES (?, ?, ?, ?)",
-                                      (new_username, hashed, new_role, new_nama))
+                            c = conn.cursor()
+                            c.execute("SELECT username FROM users WHERE username=?", (new_username.strip(),))
+                            if c.fetchone():
+                                st.error(f"❌ Username '{new_username}' sudah digunakan!")
+                            else:
+                                hashed = generate_password_hash(new_pw)
+                                c.execute("INSERT INTO users VALUES (?, ?, ?, ?)",
+                                          (new_username.strip(), hashed, new_role, new_nama.strip()))
+                                conn.commit()
+                                add_audit_log(st.session_state['nama_lengkap'], "USER_CREATE",
+                                              f"Menambahkan akun baru: {new_username} (Role: {new_role}).")
+                                st.success(f"✅ Akun **'{new_username}'** berhasil ditambahkan!")
+                                st.rerun()
+
+            # ----------------------------------------------------------------
+            # AKSI 2 — EDIT PROFIL USER (nama lengkap & role)
+            # Catatan: username tidak boleh diubah karena sebagai PRIMARY KEY
+            # ----------------------------------------------------------------
+            elif aksi == "✏️ Edit Profil User":
+                st.markdown("#### ✏️ Edit Profil Akun")
+                st.info("💡 Username tidak dapat diubah karena digunakan sebagai identitas unik. Hanya Nama Lengkap dan Role yang bisa diedit.")
+
+                with st.form("form_edit_user", clear_on_submit=False):
+                    # Pilih user yang akan diedit
+                    target_edit = st.selectbox("👤 Pilih Akun yang Akan Diedit", daftar_username)
+
+                    # Ambil data saat ini untuk pre-fill form
+                    data_user_lama = df_users[df_users['username'] == target_edit].iloc[0]
+
+                    col_e1, col_e2 = st.columns(2)
+                    with col_e1:
+                        # Pre-fill dengan nilai lama agar user tidak perlu ketik ulang
+                        edit_nama = st.text_input(
+                            "📛 Nama Lengkap Baru",
+                            value=data_user_lama['nama_lengkap']
+                        )
+                    with col_e2:
+                        # Pre-select role yang sedang aktif
+                        semua_role   = ["Administrator", "Supervisor", "Manager"]
+                        index_role   = semua_role.index(data_user_lama['role']) if data_user_lama['role'] in semua_role else 0
+                        edit_role    = st.selectbox("🎭 Role Baru", semua_role, index=index_role)
+
+                    submit_edit = st.form_submit_button("💾 Simpan Perubahan Profil", type="primary", use_container_width=True)
+                    if submit_edit:
+                        if not edit_nama.strip():
+                            st.error("❌ Nama Lengkap tidak boleh kosong!")
+                        else:
+                            c = conn.cursor()
+                            c.execute(
+                                "UPDATE users SET nama_lengkap=?, role=? WHERE username=?",
+                                (edit_nama.strip(), edit_role, target_edit)
+                            )
                             conn.commit()
-                            add_audit_log(st.session_state['nama_lengkap'], "USER_CREATE",
-                                          f"Menambahkan akun baru: {new_username} ({new_role}).")
-                            st.success(f"✅ Akun '{new_username}' berhasil ditambahkan!")
+                            add_audit_log(
+                                st.session_state['nama_lengkap'], "USER_EDIT",
+                                f"Mengubah profil akun '{target_edit}': nama='{edit_nama}', role='{edit_role}'."
+                            )
+                            st.success(f"✅ Profil akun **'{target_edit}'** berhasil diperbarui!")
                             st.rerun()
 
-            st.markdown("---")
+            # ----------------------------------------------------------------
+            # AKSI 3 — GANTI PASSWORD
+            # ----------------------------------------------------------------
+            elif aksi == "🔑 Ganti Password":
+                st.markdown("#### 🔑 Ganti Password Akun")
+                st.caption("Password baru akan di-hash otomatis sebelum disimpan.")
 
-            # --- Bagian 3: Form ganti password ---
-            st.markdown("#### 🔑 Ganti Password Akun")
-            st.caption("Password akan di-hash secara otomatis sebelum disimpan, sehingga aman.")
-            with st.form("form_ganti_password", clear_on_submit=True):
-                col_p1, col_p2 = st.columns(2)
-                with col_p1:
-                    target_user  = st.selectbox("👤 Pilih Akun", df_users['username'].tolist())
-                    new_password = st.text_input("🔑 Password Baru", type="password")
-                with col_p2:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    confirm_password = st.text_input("🔑 Konfirmasi Password Baru", type="password")
+                with st.form("form_ganti_password", clear_on_submit=True):
+                    col_p1, col_p2 = st.columns(2)
+                    with col_p1:
+                        target_user  = st.selectbox("👤 Pilih Akun", daftar_username)
+                        new_password = st.text_input("🔑 Password Baru", type="password")
+                    with col_p2:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        confirm_password = st.text_input("🔑 Konfirmasi Password Baru", type="password")
 
-                submit_pw = st.form_submit_button("💾 Simpan Password Baru", type="primary", use_container_width=True)
-                if submit_pw:
-                    if not new_password.strip():
-                        st.error("❌ Password tidak boleh kosong!")
-                    elif new_password != confirm_password:
-                        st.error("❌ Konfirmasi password tidak cocok! Pastikan kedua input sama.")
-                    elif len(new_password) < 6:
-                        st.error("❌ Password minimal 6 karakter!")
-                    else:
-                        # Hash password sebelum disimpan - INILAH INTI PERBAIKANNYA
-                        hashed_pw = generate_password_hash(new_password)
-                        c = conn.cursor()
-                        c.execute("UPDATE users SET password=? WHERE username=?", (hashed_pw, target_user))
-                        conn.commit()
-                        add_audit_log(st.session_state['nama_lengkap'], "USER_MGMT",
-                                      f"Mengganti password untuk akun: {target_user}.")
-                        st.success(f"✅ Password untuk akun '{target_user}' berhasil diperbarui!")
+                    submit_pw = st.form_submit_button("💾 Simpan Password Baru", type="primary", use_container_width=True)
+                    if submit_pw:
+                        if not new_password.strip():
+                            st.error("❌ Password tidak boleh kosong!")
+                        elif new_password != confirm_password:
+                            st.error("❌ Konfirmasi password tidak cocok!")
+                        elif len(new_password) < 6:
+                            st.error("❌ Password minimal 6 karakter!")
+                        else:
+                            hashed_pw = generate_password_hash(new_password)
+                            c = conn.cursor()
+                            c.execute("UPDATE users SET password=? WHERE username=?", (hashed_pw, target_user))
+                            conn.commit()
+                            add_audit_log(st.session_state['nama_lengkap'], "USER_CHANGE_PW",
+                                          f"Mengganti password untuk akun: '{target_user}'.")
+                            st.success(f"✅ Password akun **'{target_user}'** berhasil diperbarui!")
+
+            # ----------------------------------------------------------------
+            # AKSI 4 — HAPUS AKUN
+            # Proteksi penting:
+            # 1. Akun 'admin' tidak boleh dihapus (agar sistem tidak terkunci)
+            # 2. User tidak bisa menghapus akun dirinya sendiri
+            # 3. Ada konfirmasi sebelum eksekusi hapus
+            # ----------------------------------------------------------------
+            elif aksi == "🗑️ Hapus Akun":
+                st.markdown("#### 🗑️ Hapus Akun Pengguna")
+                st.warning("⚠️ **Perhatian:** Penghapusan akun bersifat permanen dan tidak dapat dibatalkan.")
+
+                # Filter: sembunyikan 'admin' dan akun yang sedang login dari pilihan hapus
+                user_aktif      = st.session_state['nama_lengkap']
+                username_aktif  = st.session_state.get('username_aktif', '')
+
+                # Ambil username aktif dari session (kita simpan saat login)
+                bisa_dihapus = [
+                    u for u in daftar_username
+                    if u != 'admin'  # admin tidak boleh dihapus
+                ]
+
+                if not bisa_dihapus:
+                    st.info("ℹ️ Tidak ada akun yang bisa dihapus saat ini.")
+                else:
+                    with st.form("form_hapus_user", clear_on_submit=True):
+                        target_hapus = st.selectbox(
+                            "👤 Pilih Akun yang Akan Dihapus",
+                            bisa_dihapus,
+                            help="Akun 'admin' tidak dapat dihapus untuk menjaga keamanan sistem."
+                        )
+
+                        # Tampilkan info akun yang dipilih
+                        info_hapus = df_users[df_users['username'] == target_hapus]
+                        if not info_hapus.empty:
+                            st.markdown(f"""
+                            <div style="background:#fef2f2; border-left:4px solid #ef4444; padding:12px 16px; border-radius:8px; margin:10px 0;">
+                                <b>Akun yang akan dihapus:</b><br>
+                                👤 Username: <b>{info_hapus.iloc[0]['username']}</b><br>
+                                📛 Nama: <b>{info_hapus.iloc[0]['nama_lengkap']}</b><br>
+                                🎭 Role: <b>{info_hapus.iloc[0]['role']}</b>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        # Konfirmasi dengan mengetik ulang username
+                        konfirmasi = st.text_input(
+                            f"🔐 Ketik ulang username **'{target_hapus}'** untuk konfirmasi penghapusan:",
+                            placeholder=f"Ketik: {target_hapus}"
+                        )
+
+                        submit_hapus = st.form_submit_button("🗑️ Hapus Akun Ini", type="primary", use_container_width=True)
+                        if submit_hapus:
+                            if konfirmasi != target_hapus:
+                                st.error("❌ Konfirmasi tidak cocok! Pastikan Anda mengetik username dengan benar.")
+                            else:
+                                c = conn.cursor()
+                                c.execute("DELETE FROM users WHERE username=?", (target_hapus,))
+                                conn.commit()
+                                add_audit_log(
+                                    st.session_state['nama_lengkap'], "USER_DELETE",
+                                    f"Menghapus akun: '{target_hapus}' ({info_hapus.iloc[0]['role']})."
+                                )
+                                st.success(f"✅ Akun **'{target_hapus}'** berhasil dihapus dari sistem.")
+                                st.rerun()
+
         else:
             st.error("🚫 Akses Ditolak: Anda harus login sebagai Administrator untuk melihat menu ini.")
             
