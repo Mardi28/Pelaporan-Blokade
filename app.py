@@ -52,11 +52,31 @@ st.set_page_config(page_title="Aplikasi Pelaporan Blokade", page_icon="🚧", la
 @st.cache_resource
 def get_connection():
     """
-    Membuat dan mengembalikan koneksi SQLite yang dikelola oleh Streamlit.
-    Fungsi ini hanya dijalankan SEKALI, hasilnya di-cache dan di-reuse.
+    Membuat koneksi SQLite DAN langsung menginisialisasi semua tabel di sini.
+    Dengan cara ini, tabel DIJAMIN sudah ada sebelum fungsi apapun (termasuk
+    add_audit_log dan authenticate) dipanggil — menghindari OperationalError
+    di Streamlit Cloud yang databasenya selalu fresh setiap deploy.
     """
-    conn = sqlite3.connect('blokade_pro_v3.db', check_same_thread=False)
-    return conn
+    _conn = sqlite3.connect('blokade_pro_v3.db', check_same_thread=False)
+    _c = _conn.cursor()
+
+    # Buat tabel users jika belum ada
+    _c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (username TEXT PRIMARY KEY, password TEXT, role TEXT, nama_lengkap TEXT)''')
+
+    # Buat tabel audit_logs jika belum ada
+    _c.execute('''CREATE TABLE IF NOT EXISTS audit_logs
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, user TEXT, action TEXT, details TEXT)''')
+
+    # Buat tabel laporan jika belum ada (struktur kolom saja, data dummy diisi oleh init_db)
+    _c.execute('''CREATE TABLE IF NOT EXISTS laporan
+                 (Tanggal TEXT, Pelaku TEXT, "No HP" TEXT, Kabupaten TEXT, Kecamatan TEXT,
+                  Desa TEXT, Lokasi TEXT, "Waktu Mulai" TEXT, "Waktu Selesai" TEXT,
+                  "Durasi (Jam)" REAL, "Kategori Durasi" TEXT, Isu TEXT, Target TEXT,
+                  Deskripsi TEXT, File_Bukti TEXT)''')
+
+    _conn.commit()
+    return _conn
 
 conn = get_connection()
 
@@ -72,16 +92,14 @@ conn = get_connection()
 # ==========================================
 
 def init_db():
+    """
+    Mengisi data awal (default users & dummy data laporan) jika belum ada.
+    Pembuatan tabel sudah dilakukan di get_connection() sehingga fungsi ini
+    AMAN dipanggil kapanpun — tabel sudah pasti ada.
+    """
     c = conn.cursor()
-    # Tabel Users (Menyimpan password yang di-hash)
-    c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (username TEXT PRIMARY KEY, password TEXT, role TEXT, nama_lengkap TEXT)''')
-    
-    # Tabel Audit Logs
-    c.execute('''CREATE TABLE IF NOT EXISTS audit_logs
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, user TEXT, action TEXT, details TEXT)''')
-    
-    # Cek apakah admin sudah ada, jika belum buat dengan password default '123' yang di-hash
+
+    # Isi user default jika belum ada
     c.execute("SELECT * FROM users WHERE username='admin'")
     if not c.fetchone():
         default_pw = generate_password_hash("123")
@@ -90,10 +108,9 @@ def init_db():
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('mgr', default_pw, 'Manager', 'Bapak Manager'))
         conn.commit()
 
-    # Tabel Laporan Blokade
-    try:
-        df_cek = pd.read_sql("SELECT * FROM laporan LIMIT 1", conn)
-    except:
+    # Isi data dummy laporan jika tabel masih kosong
+    c.execute("SELECT COUNT(*) FROM laporan")
+    if c.fetchone()[0] == 0:
         DUMMY_DATA = [
             {"Tanggal": datetime.date(2024, 2, 10), "Pelaku": "Andi", "No HP": "0812345678", "Kabupaten": "Bolaang Mongondow", "Kecamatan": "Lolayan", "Desa": "Bakan", "Lokasi": "Simpang 3 Masjid Bakan", "Waktu Mulai": "08:00", "Waktu Selesai": "13:00", "Durasi (Jam)": 5.0, "Kategori Durasi": "Cepat", "Isu": "Tuntutan Pekerjaan", "Target": "PT JRBM & PT SMA", "Deskripsi": "Masyarakat menuntut pekerjaan untuk warga lokal. Tenda didirikan di simpang 3.", "File_Bukti": ""},
             {"Tanggal": datetime.date(2024, 5, 20), "Pelaku": "Budi", "No HP": "0812345678", "Kabupaten": "Bolaang Mongondow", "Kecamatan": "Lolayan", "Desa": "Matali Baru", "Lokasi": "Lokasi Umum Matali Baru", "Waktu Mulai": "07:00", "Waktu Selesai": "18:00", "Durasi (Jam)": 11.0, "Kategori Durasi": "Lambat", "Isu": "Kualitas Lingkungan", "Target": "PT JRBM", "Deskripsi": "Kompensasi debu jalan belum dibayarkan. Warga memblokade jalan pakai kayu.", "File_Bukti": ""},
@@ -102,7 +119,8 @@ def init_db():
             {"Tanggal": datetime.date(2025, 6, 20), "Pelaku": "Gita", "No HP": "0812345678", "Kabupaten": "Bolaang Mongondow Selatan", "Kecamatan": "Pinolosian Tengah", "Desa": "Tobayagan", "Lokasi": "Simpang 2 Akses Masuk Motandoi", "Waktu Mulai": "08:00", "Waktu Selesai": "20:00", "Durasi (Jam)": 12.0, "Kategori Durasi": "Lambat", "Isu": "Ganti Rugi Tanaman/Banjir", "Target": "PT JRBM", "Deskripsi": "Tuntutan ganti rugi tanaman cengkeh yang terkena dampak. Negosiasi alot.", "File_Bukti": ""},
         ]
         df_dummy = pd.DataFrame(DUMMY_DATA)
-        df_dummy.to_sql('laporan', conn, index=False)
+        df_dummy.to_sql('laporan', conn, if_exists='append', index=False)
+        # Sekarang add_audit_log aman dipanggil karena tabel audit_logs sudah ada
         add_audit_log("System", "INIT", "Sistem menginisialisasi database laporan pertama kali.")
 
 def load_data():
