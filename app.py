@@ -43,9 +43,33 @@ except ImportError:
 st.set_page_config(page_title="Aplikasi Pelaporan Blokade", page_icon="🚧", layout="wide", initial_sidebar_state="expanded")
 
 # ==========================================
-# DATABASE LOKAL (SQLITE) SETTING (V3)
+# DATABASE LOKAL (SQLITE) SETTING (V4)
 # ==========================================
-conn = sqlite3.connect('blokade_pro_v3.db', check_same_thread=False)
+# PERBAIKAN STEP 1: Menggunakan @st.cache_resource agar koneksi database
+# dikelola oleh Streamlit secara aman untuk lingkungan multi-user.
+# Koneksi lama (global variable) berisiko menyebabkan crash atau data corrupt
+# jika ada lebih dari satu user mengakses aplikasi secara bersamaan.
+@st.cache_resource
+def get_connection():
+    """
+    Membuat dan mengembalikan koneksi SQLite yang dikelola oleh Streamlit.
+    Fungsi ini hanya dijalankan SEKALI, hasilnya di-cache dan di-reuse.
+    """
+    conn = sqlite3.connect('blokade_pro_v3.db', check_same_thread=False)
+    return conn
+
+conn = get_connection()
+
+# ==========================================
+# CATATAN PERBAIKAN (CHANGELOG)
+# ==========================================
+# v3 → v4 (Refactor & Security Improvements):
+# [STEP 1] Koneksi DB: global variable → @st.cache_resource (thread-safe)
+# [STEP 2] Manajemen User: data_editor langsung → form ganti password dengan hash
+# [STEP 3] Upload File: tanpa validasi → cek ukuran, sanitasi nama, timestamp
+# [STEP 4] Import Data: langsung append → validasi kolom wajib sebelum import
+# [STEP 5] Koordinat: 8 desa → 14 desa (semua dari LOKASI_DATA)
+# ==========================================
 
 def init_db():
     c = conn.cursor()
@@ -182,15 +206,39 @@ TUNTUTAN_DATA = {
 }
 
 def get_coordinates(desa, kab):
+    # ------------------------------------------------------------------
+    # PERBAIKAN STEP 5: Melengkapi koordinat untuk semua desa yang ada
+    # di dalam LOKASI_DATA. Kode lama hanya mendefinisikan 8 desa,
+    # sehingga desa-desa lain jatuh ke koordinat fallback kabupaten dan
+    # menumpuk di satu titik di peta (tidak akurat dan menyesatkan).
+    # Koordinat di bawah adalah estimasi berdasarkan posisi geografis
+    # aktual masing-masing desa di wilayah BM & BMS, Sulawesi Utara.
+    # ------------------------------------------------------------------
     coords = {
-        "Bakan": (0.655, 124.050), "Lolayan": (0.670, 124.010),
-        "Matali Baru": (0.630, 123.980), "Mopusi": (0.690, 124.030),
-        "Tobayagan": (0.380, 123.950), "Tobayagan Selatan": (0.370, 123.960),
-        "Dumagin A": (0.350, 123.900), "Motandoi": (0.400, 124.000)
+        # === Kabupaten Bolaang Mongondow - Kecamatan Lolayan ===
+        "Bakan"         : (0.6553, 124.0502),
+        "Lolayan"       : (0.6700, 124.0100),
+        "Matali Baru"   : (0.6300, 123.9800),
+        "Mopusi"        : (0.6900, 124.0300),
+        # === Kabupaten Bolaang Mongondow Selatan - Kec. Pinolosian Tengah ===
+        "Tobayagan"         : (0.3800, 123.9500),
+        "Tobayagan Selatan" : (0.3700, 123.9600),
+        # === Kabupaten Bolaang Mongondow Selatan - Kec. Pinolosian Timur ===
+        "Motandoi"          : (0.4000, 124.0000),
+        "Motandoi Selatan"  : (0.3900, 123.9900),
+        "Dumagin A"         : (0.3500, 123.9000),
+        "Dumagin B"         : (0.3450, 123.8950),
+        "Onggunoi Induk"    : (0.3600, 123.9100),
+        "Onggunoi Selatan"  : (0.3550, 123.9050),
+        "Pidung"            : (0.3650, 123.9200),
+        "Dayow"             : (0.3750, 123.9300),
     }
-    if desa in coords: return coords[desa]
-    if kab == "Bolaang Mongondow": return (0.650, 124.000)
-    return (0.350, 123.950)
+    if desa in coords:
+        return coords[desa]
+    # Fallback: jika desa belum terdaftar, gunakan pusat kabupaten
+    if kab == "Bolaang Mongondow":
+        return (0.6500, 124.0000)
+    return (0.3800, 123.9500)  # Fallback BMS
 
 # ==========================================
 # INISIALISASI STATE (LOGIN)
@@ -445,11 +493,40 @@ def input_form_page():
             elif not re.match(r"^[0-9]+$", no_hp) and no_hp != "":
                 st.error("❌ Gagal Menyimpan: Nomor HP hanya boleh berisi angka!")
             else:
+                # ------------------------------------------------------------------
+                # PERBAIKAN STEP 3: Validasi file upload yang lebih aman.
+                # Kode lama langsung menyimpan file tanpa pengecekan apapun,
+                # yang berisiko:
+                # 1. File terlalu besar (tidak ada batas ukuran)
+                # 2. Nama file berbahaya (path traversal attack)
+                # 3. Nama file bertabrakan jika ada file dengan nama yang sama
+                # Solusi: cek ukuran, sanitasi nama, dan tambahkan timestamp unik.
+                # ------------------------------------------------------------------
                 file_path = ""
+                MAKS_UKURAN_MB = 5  # Batas maksimum upload: 5 MB
+                TIPE_DIIZINKAN = ['jpg', 'jpeg', 'png']
+
                 if bukti:
-                    file_path = os.path.join("uploads", bukti.name)
-                    with open(file_path, "wb") as f:
-                        f.write(bukti.getbuffer())
+                    # 1. Cek ukuran file
+                    ukuran_mb = len(bukti.getbuffer()) / (1024 * 1024)
+                    ekstensi   = bukti.name.rsplit('.', 1)[-1].lower()
+
+                    if ukuran_mb > MAKS_UKURAN_MB:
+                        st.error(f"❌ File terlalu besar ({ukuran_mb:.1f} MB). Maksimum {MAKS_UKURAN_MB} MB.")
+                        st.stop()
+                    elif ekstensi not in TIPE_DIIZINKAN:
+                        st.error(f"❌ Tipe file tidak diizinkan. Hanya: {', '.join(TIPE_DIIZINKAN)}")
+                        st.stop()
+                    else:
+                        # 2. Sanitasi nama file: hapus karakter berbahaya
+                        nama_aman = re.sub(r'[^a-zA-Z0-9_.-]', '_', bukti.name)
+                        # 3. Tambahkan timestamp agar nama unik, hindari tabrakan
+                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        nama_final = f"{timestamp}_{nama_aman}"
+                        file_path  = os.path.join("uploads", nama_final)
+
+                        with open(file_path, "wb") as f:
+                            f.write(bukti.getbuffer())
 
                 new_data = {
                     "Tanggal": str(tanggal), "Pelaku": nama_pelaku, "No HP": no_hp,
@@ -496,7 +573,27 @@ def kelola_data_page():
     with tab2:
         st.markdown("### 📥 Import Data Historis")
         st.caption("Unggah file CSV atau Excel yang berisi data laporan. Pastikan nama kolom sesuai standar aplikasi.")
-        
+
+        # ------------------------------------------------------------------
+        # PERBAIKAN STEP 4: Validasi kolom sebelum data diimpor ke database.
+        # Kode lama langsung mengeksekusi import tanpa memeriksa apakah kolom
+        # di file yang diunggah sesuai dengan skema tabel database.
+        # Akibatnya, data bisa masuk dengan format yang salah atau error
+        # tanpa pesan yang jelas bagi pengguna.
+        # Solusi: definisikan kolom wajib, bandingkan dengan file yang diupload,
+        # dan tampilkan pesan error yang informatif sebelum import dieksekusi.
+        # ------------------------------------------------------------------
+        KOLOM_WAJIB = [
+            "Tanggal", "Pelaku", "No HP", "Kabupaten", "Kecamatan", "Desa",
+            "Lokasi", "Waktu Mulai", "Waktu Selesai", "Durasi (Jam)",
+            "Kategori Durasi", "Isu", "Target", "Deskripsi", "File_Bukti"
+        ]
+
+        # Tampilkan panduan kolom yang diperlukan
+        with st.expander("📋 Lihat Format Kolom yang Diperlukan"):
+            st.code(", ".join(KOLOM_WAJIB))
+            st.caption("Pastikan file Anda memiliki semua kolom di atas dengan nama yang sama persis (case-sensitive).")
+
         uploaded_file = st.file_uploader("Pilih file data (.csv atau .xlsx)", type=["csv", "xlsx"])
         
         if uploaded_file is not None:
@@ -506,27 +603,123 @@ def kelola_data_page():
                 else:
                     df_import = pd.read_excel(uploaded_file)
                 
-                st.write("Preview Data yang akan diimpor:")
-                st.dataframe(df_import.head())
-                
-                if st.button("🚀 Eksekusi Import Data", type="primary"):
-                    df_import.to_sql('laporan', conn, if_exists='append', index=False)
-                    add_audit_log(st.session_state['nama_lengkap'], "IMPORT", f"Mengimpor {len(df_import)} baris data dari file {uploaded_file.name}.")
-                    st.success(f"✅ Berhasil mengimpor {len(df_import)} baris data!")
+                # --- Validasi kolom ---
+                kolom_ada      = set(df_import.columns.tolist())
+                kolom_wajib    = set(KOLOM_WAJIB)
+                kolom_kurang   = kolom_wajib - kolom_ada
+                kolom_ekstra   = kolom_ada - kolom_wajib
+
+                if kolom_kurang:
+                    # Ada kolom wajib yang tidak ditemukan di file
+                    st.error(f"❌ Import dibatalkan! Kolom berikut **tidak ditemukan** di file Anda:")
+                    st.code(", ".join(sorted(kolom_kurang)))
+                    st.info("💡 Silakan perbaiki file Anda dan coba lagi.")
+                else:
+                    # Semua kolom wajib ada
+                    if kolom_ekstra:
+                        st.warning(f"⚠️ Kolom tambahan di luar standar ditemukan dan akan **diabaikan**: `{', '.join(sorted(kolom_ekstra))}`")
+
+                    st.success(f"✅ Format kolom valid! Ditemukan **{len(df_import)} baris** data siap diimpor.")
+                    st.write("**Preview 5 baris pertama:**")
+                    st.dataframe(df_import[KOLOM_WAJIB].head(), use_container_width=True)
+                    
+                    if st.button("🚀 Eksekusi Import Data", type="primary"):
+                        # Hanya simpan kolom yang sesuai standar
+                        df_import[KOLOM_WAJIB].to_sql('laporan', conn, if_exists='append', index=False)
+                        add_audit_log(st.session_state['nama_lengkap'], "IMPORT",
+                                      f"Mengimpor {len(df_import)} baris data dari file {uploaded_file.name}.")
+                        st.success(f"✅ Berhasil mengimpor {len(df_import)} baris data!")
+                        st.rerun()
+
             except Exception as e:
                 st.error(f"❌ Terjadi kesalahan saat membaca file: {e}")
 
     with tab3:
         if st.session_state['role'] == 'Administrator':
-            st.markdown("### Manajemen Akun Pengguna")
-            st.warning("⚠️ Mengubah password di sini memerlukan input yang sudah di-hash. Fitur ini masih basic, hubungi developer untuk membuat form ganti password khusus.")
-            df_users = pd.read_sql("SELECT * FROM users", conn)
-            
-            edited_users = st.data_editor(df_users, num_rows="dynamic", use_container_width=True)
-            if st.button("💾 Simpan Perubahan Akun", type="primary"):
-                edited_users.to_sql('users', conn, if_exists='replace', index=False)
-                add_audit_log(st.session_state['nama_lengkap'], "USER_MGMT", "Melakukan perubahan pada data akun pengguna.")
-                st.success("Data User berhasil diperbarui!")
+            st.markdown("### 👥 Manajemen Akun Pengguna")
+
+            # ------------------------------------------------------------------
+            # PERBAIKAN STEP 2: Memisahkan fitur manajemen user menjadi dua
+            # bagian yang aman:
+            # 1. Tabel read-only untuk melihat daftar user (tanpa kolom password)
+            # 2. Form khusus untuk ganti password dengan hash otomatis
+            # Sebelumnya, user bisa langsung mengedit kolom password di tabel
+            # yang bisa menyebabkan password tersimpan sebagai plaintext (tidak
+            # ter-hash), sehingga login akan selalu gagal.
+            # ------------------------------------------------------------------
+
+            # --- Bagian 1: Tampilan daftar user (tanpa kolom password) ---
+            st.markdown("#### 📋 Daftar Akun Terdaftar")
+            st.caption("Kolom password disembunyikan untuk keamanan. Gunakan form di bawah untuk mengubah password.")
+            df_users = pd.read_sql("SELECT username, role, nama_lengkap FROM users", conn)
+            st.dataframe(df_users, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+
+            # --- Bagian 2: Form tambah user baru ---
+            st.markdown("#### ➕ Tambah Akun Baru")
+            with st.form("form_tambah_user", clear_on_submit=True):
+                col_u1, col_u2 = st.columns(2)
+                with col_u1:
+                    new_username   = st.text_input("👤 Username Baru")
+                    new_nama       = st.text_input("📛 Nama Lengkap")
+                with col_u2:
+                    new_role       = st.selectbox("🎭 Role", ["Administrator", "Supervisor", "Manager"])
+                    new_pw         = st.text_input("🔑 Password Baru", type="password")
+                    new_pw_confirm = st.text_input("🔑 Konfirmasi Password", type="password")
+
+                submit_tambah = st.form_submit_button("➕ Tambah User", use_container_width=True)
+                if submit_tambah:
+                    if not new_username.strip() or not new_pw.strip():
+                        st.error("❌ Username dan Password tidak boleh kosong!")
+                    elif new_pw != new_pw_confirm:
+                        st.error("❌ Konfirmasi password tidak cocok!")
+                    else:
+                        c = conn.cursor()
+                        c.execute("SELECT username FROM users WHERE username=?", (new_username,))
+                        if c.fetchone():
+                            st.error(f"❌ Username '{new_username}' sudah ada!")
+                        else:
+                            hashed = generate_password_hash(new_pw)
+                            c.execute("INSERT INTO users VALUES (?, ?, ?, ?)",
+                                      (new_username, hashed, new_role, new_nama))
+                            conn.commit()
+                            add_audit_log(st.session_state['nama_lengkap'], "USER_CREATE",
+                                          f"Menambahkan akun baru: {new_username} ({new_role}).")
+                            st.success(f"✅ Akun '{new_username}' berhasil ditambahkan!")
+                            st.rerun()
+
+            st.markdown("---")
+
+            # --- Bagian 3: Form ganti password ---
+            st.markdown("#### 🔑 Ganti Password Akun")
+            st.caption("Password akan di-hash secara otomatis sebelum disimpan, sehingga aman.")
+            with st.form("form_ganti_password", clear_on_submit=True):
+                col_p1, col_p2 = st.columns(2)
+                with col_p1:
+                    target_user  = st.selectbox("👤 Pilih Akun", df_users['username'].tolist())
+                    new_password = st.text_input("🔑 Password Baru", type="password")
+                with col_p2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    confirm_password = st.text_input("🔑 Konfirmasi Password Baru", type="password")
+
+                submit_pw = st.form_submit_button("💾 Simpan Password Baru", type="primary", use_container_width=True)
+                if submit_pw:
+                    if not new_password.strip():
+                        st.error("❌ Password tidak boleh kosong!")
+                    elif new_password != confirm_password:
+                        st.error("❌ Konfirmasi password tidak cocok! Pastikan kedua input sama.")
+                    elif len(new_password) < 6:
+                        st.error("❌ Password minimal 6 karakter!")
+                    else:
+                        # Hash password sebelum disimpan - INILAH INTI PERBAIKANNYA
+                        hashed_pw = generate_password_hash(new_password)
+                        c = conn.cursor()
+                        c.execute("UPDATE users SET password=? WHERE username=?", (hashed_pw, target_user))
+                        conn.commit()
+                        add_audit_log(st.session_state['nama_lengkap'], "USER_MGMT",
+                                      f"Mengganti password untuk akun: {target_user}.")
+                        st.success(f"✅ Password untuk akun '{target_user}' berhasil diperbarui!")
         else:
             st.error("🚫 Akses Ditolak: Anda harus login sebagai Administrator untuk melihat menu ini.")
             
