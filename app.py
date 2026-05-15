@@ -80,6 +80,22 @@ def get_connection():
 
 conn = get_connection()
 
+def get_conn():
+    """
+    Helper untuk selalu mendapatkan koneksi yang valid.
+    Jika koneksi lama sudah closed/stale (misal setelah app wake-up dari sleep
+    di Streamlit Cloud), fungsi ini akan memanggil get_connection() ulang
+    dan memastikan semua tabel sudah ada.
+    """
+    try:
+        # Coba ping koneksi dengan query ringan
+        get_connection().execute("SELECT 1")
+        return get_connection()
+    except Exception:
+        # Koneksi stale — clear cache lalu buat ulang
+        get_connection.clear()
+        return get_connection()
+
 # ==========================================
 # CATATAN PERBAIKAN (CHANGELOG)
 # ==========================================
@@ -94,10 +110,8 @@ conn = get_connection()
 def init_db():
     """
     Mengisi data awal (default users & dummy data laporan) jika belum ada.
-    Pembuatan tabel sudah dilakukan di get_connection() sehingga fungsi ini
-    AMAN dipanggil kapanpun — tabel sudah pasti ada.
     """
-    c = conn.cursor()
+    c = get_conn().cursor()
 
     # Isi user default jika belum ada
     c.execute("SELECT * FROM users WHERE username='admin'")
@@ -106,7 +120,7 @@ def init_db():
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('admin', default_pw, 'Administrator', 'Super Admin'))
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('spv', default_pw, 'Supervisor', 'Jhon Doe (SPV)'))
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('mgr', default_pw, 'Manager', 'Bapak Manager'))
-        conn.commit()
+        get_conn().commit()
 
     # Isi data dummy laporan jika tabel masih kosong
     c.execute("SELECT COUNT(*) FROM laporan")
@@ -119,14 +133,13 @@ def init_db():
             {"Tanggal": datetime.date(2025, 6, 20), "Pelaku": "Gita", "No HP": "0812345678", "Kabupaten": "Bolaang Mongondow Selatan", "Kecamatan": "Pinolosian Tengah", "Desa": "Tobayagan", "Lokasi": "Simpang 2 Akses Masuk Motandoi", "Waktu Mulai": "08:00", "Waktu Selesai": "20:00", "Durasi (Jam)": 12.0, "Kategori Durasi": "Lambat", "Isu": "Ganti Rugi Tanaman/Banjir", "Target": "PT JRBM", "Deskripsi": "Tuntutan ganti rugi tanaman cengkeh yang terkena dampak. Negosiasi alot.", "File_Bukti": ""},
         ]
         df_dummy = pd.DataFrame(DUMMY_DATA)
-        df_dummy.to_sql('laporan', conn, if_exists='append', index=False)
-        # Sekarang add_audit_log aman dipanggil karena tabel audit_logs sudah ada
+        df_dummy.to_sql('laporan', get_conn(), if_exists='append', index=False)
         add_audit_log("System", "INIT", "Sistem menginisialisasi database laporan pertama kali.")
 
 def load_data():
     """Ambil semua data laporan. Return DataFrame kosong jika tabel belum ada."""
     try:
-        return pd.read_sql("SELECT * FROM laporan", conn)
+        return pd.read_sql("SELECT * FROM laporan", get_conn())
     except Exception:
         return pd.DataFrame()
 
@@ -134,7 +147,7 @@ def save_new_data(new_dict):
     """Simpan satu baris data laporan baru ke database."""
     try:
         new_df = pd.DataFrame([new_dict])
-        new_df.to_sql('laporan', conn, if_exists='append', index=False)
+        new_df.to_sql('laporan', get_conn(), if_exists='append', index=False)
     except Exception as e:
         st.error(f"❌ Gagal menyimpan data: {e}")
 
@@ -146,8 +159,8 @@ def add_audit_log(user, action, details):
     """
     try:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        c = conn.cursor()
-        # Pastikan tabel ada sebelum INSERT (jaga-jaga jika koneksi di-reset cloud)
+        db  = get_conn()
+        c   = db.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS audit_logs
                      (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT,
                       user TEXT, action TEXT, details TEXT)''')
@@ -155,10 +168,8 @@ def add_audit_log(user, action, details):
             "INSERT INTO audit_logs (timestamp, user, action, details) VALUES (?, ?, ?, ?)",
             (now, user, action, details)
         )
-        conn.commit()
+        db.commit()
     except Exception as e:
-        # Jangan crash aplikasi hanya karena audit log gagal
-        # Cukup cetak ke console untuk debugging
         print(f"[AUDIT LOG ERROR] {e} | action={action} | user={user}")
 
 def send_telegram_notif(data_dict, pelapor):
@@ -190,7 +201,7 @@ def send_telegram_notif(data_dict, pelapor):
         return False
 
 def authenticate(username, password):
-    c = conn.cursor()
+    c = get_conn().cursor()
     c.execute("SELECT password, role, nama_lengkap FROM users WHERE username=?", (username,))
     user_record = c.fetchone()
     
@@ -606,7 +617,7 @@ def kelola_data_page():
             edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
             
             if st.button("💾 Simpan Perubahan Tabel Laporan", type="primary"):
-                edited_df.to_sql('laporan', conn, if_exists='replace', index=False)
+                edited_df.to_sql('laporan', get_conn(), if_exists='replace', index=False)
                 add_audit_log(st.session_state['nama_lengkap'], "UPDATE/DELETE", "Mengubah atau menghapus baris data laporan.")
                 st.success("Tabel Laporan berhasil diperbarui!")
                 st.rerun()
@@ -668,7 +679,7 @@ def kelola_data_page():
                     
                     if st.button("🚀 Eksekusi Import Data", type="primary"):
                         # Hanya simpan kolom yang sesuai standar
-                        df_import[KOLOM_WAJIB].to_sql('laporan', conn, if_exists='append', index=False)
+                        df_import[KOLOM_WAJIB].to_sql('laporan', get_conn(), if_exists='append', index=False)
                         add_audit_log(st.session_state['nama_lengkap'], "IMPORT",
                                       f"Mengimpor {len(df_import)} baris data dari file {uploaded_file.name}.")
                         st.success(f"✅ Berhasil mengimpor {len(df_import)} baris data!")
@@ -683,7 +694,7 @@ def kelola_data_page():
             st.caption("Kelola semua akun pengguna: tambah, edit profil, ganti password, dan hapus akun.")
 
             # Ambil data user terbaru (selalu di-refresh setiap render)
-            df_users = pd.read_sql("SELECT username, role, nama_lengkap FROM users", conn)
+            df_users = pd.read_sql("SELECT username, role, nama_lengkap FROM users", get_conn())
             daftar_username = df_users['username'].tolist()
 
             # ================================================================
@@ -743,7 +754,7 @@ def kelola_data_page():
                         elif len(new_pw) < 6:
                             st.error("❌ Password minimal 6 karakter!")
                         else:
-                            c = conn.cursor()
+                            c = get_conn().cursor()
                             c.execute("SELECT username FROM users WHERE username=?", (new_username.strip(),))
                             if c.fetchone():
                                 st.error(f"❌ Username '{new_username}' sudah digunakan!")
@@ -751,7 +762,7 @@ def kelola_data_page():
                                 hashed = generate_password_hash(new_pw)
                                 c.execute("INSERT INTO users VALUES (?, ?, ?, ?)",
                                           (new_username.strip(), hashed, new_role, new_nama.strip()))
-                                conn.commit()
+                                get_conn().commit()
                                 add_audit_log(st.session_state['nama_lengkap'], "USER_CREATE",
                                               f"Menambahkan akun baru: {new_username} (Role: {new_role}).")
                                 st.success(f"✅ Akun **'{new_username}'** berhasil ditambahkan!")
@@ -790,12 +801,12 @@ def kelola_data_page():
                         if not edit_nama.strip():
                             st.error("❌ Nama Lengkap tidak boleh kosong!")
                         else:
-                            c = conn.cursor()
+                            c = get_conn().cursor()
                             c.execute(
                                 "UPDATE users SET nama_lengkap=?, role=? WHERE username=?",
                                 (edit_nama.strip(), edit_role, target_edit)
                             )
-                            conn.commit()
+                            get_conn().commit()
                             add_audit_log(
                                 st.session_state['nama_lengkap'], "USER_EDIT",
                                 f"Mengubah profil akun '{target_edit}': nama='{edit_nama}', role='{edit_role}'."
@@ -829,9 +840,9 @@ def kelola_data_page():
                             st.error("❌ Password minimal 6 karakter!")
                         else:
                             hashed_pw = generate_password_hash(new_password)
-                            c = conn.cursor()
+                            c = get_conn().cursor()
                             c.execute("UPDATE users SET password=? WHERE username=?", (hashed_pw, target_user))
-                            conn.commit()
+                            get_conn().commit()
                             add_audit_log(st.session_state['nama_lengkap'], "USER_CHANGE_PW",
                                           f"Mengganti password untuk akun: '{target_user}'.")
                             st.success(f"✅ Password akun **'{target_user}'** berhasil diperbarui!")
@@ -890,9 +901,9 @@ def kelola_data_page():
                             if konfirmasi != target_hapus:
                                 st.error("❌ Konfirmasi tidak cocok! Pastikan Anda mengetik username dengan benar.")
                             else:
-                                c = conn.cursor()
+                                c = get_conn().cursor()
                                 c.execute("DELETE FROM users WHERE username=?", (target_hapus,))
-                                conn.commit()
+                                get_conn().commit()
                                 add_audit_log(
                                     st.session_state['nama_lengkap'], "USER_DELETE",
                                     f"Menghapus akun: '{target_hapus}' ({info_hapus.iloc[0]['role']})."
@@ -907,7 +918,7 @@ def kelola_data_page():
         if st.session_state['role'] in ['Administrator', 'Manager']:
             st.markdown("### 🕵️‍♂️ Log Riwayat Aktivitas (Audit Trail)")
             st.caption("Memantau setiap pergerakan data di dalam sistem untuk transparansi operasional.")
-            df_logs = pd.read_sql("SELECT * FROM audit_logs ORDER BY id DESC", conn)
+            df_logs = pd.read_sql("SELECT * FROM audit_logs ORDER BY id DESC", get_conn())
             st.dataframe(df_logs, use_container_width=True, hide_index=True)
         else:
             st.error("🚫 Akses Ditolak: Hanya Manager dan Administrator yang dapat melihat log audit.")
