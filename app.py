@@ -111,7 +111,8 @@ def init_db():
     """
     Mengisi data awal (default users & dummy data laporan) jika belum ada.
     """
-    c = get_conn().cursor()
+    db = get_conn()          # ← simpan ke variabel, jangan panggil get_conn() berkali-kali
+    c  = db.cursor()
 
     # Isi user default jika belum ada
     c.execute("SELECT * FROM users WHERE username='admin'")
@@ -120,7 +121,7 @@ def init_db():
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('admin', default_pw, 'Administrator', 'Super Admin'))
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('spv', default_pw, 'Supervisor', 'Jhon Doe (SPV)'))
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", ('mgr', default_pw, 'Manager', 'Bapak Manager'))
-        get_conn().commit()
+        db.commit()
 
     # Isi data dummy laporan jika tabel masih kosong
     c.execute("SELECT COUNT(*) FROM laporan")
@@ -201,7 +202,8 @@ def send_telegram_notif(data_dict, pelapor):
         return False
 
 def authenticate(username, password):
-    c = get_conn().cursor()
+    db = get_conn()
+    c  = db.cursor()
     c.execute("SELECT password, role, nama_lengkap FROM users WHERE username=?", (username,))
     user_record = c.fetchone()
     
@@ -754,7 +756,8 @@ def kelola_data_page():
                         elif len(new_pw) < 6:
                             st.error("❌ Password minimal 6 karakter!")
                         else:
-                            c = get_conn().cursor()
+                            db = get_conn()
+                            c  = db.cursor()
                             c.execute("SELECT username FROM users WHERE username=?", (new_username.strip(),))
                             if c.fetchone():
                                 st.error(f"❌ Username '{new_username}' sudah digunakan!")
@@ -762,7 +765,7 @@ def kelola_data_page():
                                 hashed = generate_password_hash(new_pw)
                                 c.execute("INSERT INTO users VALUES (?, ?, ?, ?)",
                                           (new_username.strip(), hashed, new_role, new_nama.strip()))
-                                get_conn().commit()
+                                db.commit()
                                 add_audit_log(st.session_state['nama_lengkap'], "USER_CREATE",
                                               f"Menambahkan akun baru: {new_username} (Role: {new_role}).")
                                 st.success(f"✅ Akun **'{new_username}'** berhasil ditambahkan!")
@@ -801,12 +804,13 @@ def kelola_data_page():
                         if not edit_nama.strip():
                             st.error("❌ Nama Lengkap tidak boleh kosong!")
                         else:
-                            c = get_conn().cursor()
+                            db = get_conn()
+                            c  = db.cursor()
                             c.execute(
                                 "UPDATE users SET nama_lengkap=?, role=? WHERE username=?",
                                 (edit_nama.strip(), edit_role, target_edit)
                             )
-                            get_conn().commit()
+                            db.commit()
                             add_audit_log(
                                 st.session_state['nama_lengkap'], "USER_EDIT",
                                 f"Mengubah profil akun '{target_edit}': nama='{edit_nama}', role='{edit_role}'."
@@ -840,9 +844,10 @@ def kelola_data_page():
                             st.error("❌ Password minimal 6 karakter!")
                         else:
                             hashed_pw = generate_password_hash(new_password)
-                            c = get_conn().cursor()
+                            db = get_conn()
+                            c  = db.cursor()
                             c.execute("UPDATE users SET password=? WHERE username=?", (hashed_pw, target_user))
-                            get_conn().commit()
+                            db.commit()
                             add_audit_log(st.session_state['nama_lengkap'], "USER_CHANGE_PW",
                                           f"Mengganti password untuk akun: '{target_user}'.")
                             st.success(f"✅ Password akun **'{target_user}'** berhasil diperbarui!")
@@ -901,9 +906,10 @@ def kelola_data_page():
                             if konfirmasi != target_hapus:
                                 st.error("❌ Konfirmasi tidak cocok! Pastikan Anda mengetik username dengan benar.")
                             else:
-                                c = get_conn().cursor()
+                                db = get_conn()
+                                c  = db.cursor()
                                 c.execute("DELETE FROM users WHERE username=?", (target_hapus,))
-                                get_conn().commit()
+                                db.commit()
                                 add_audit_log(
                                     st.session_state['nama_lengkap'], "USER_DELETE",
                                     f"Menghapus akun: '{target_hapus}' ({info_hapus.iloc[0]['role']})."
